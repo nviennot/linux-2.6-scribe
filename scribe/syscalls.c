@@ -29,7 +29,6 @@ static int scribe_regs(struct scribe_ps *scribe, struct pt_regs *regs)
 	if (is_recording(scribe)) {
 		if (scribe_queue_new_event(scribe->queue, SCRIBE_EVENT_REGS,
 					   .regs = *regs)) {
-			scribe_emergency_stop(scribe->ctx, ERR_PTR(-ENOMEM));
 			return -ENOMEM;
 		}
 	} else {
@@ -91,6 +90,7 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 		if (event.extra->nr != scribe->nr_syscall) {
 			scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
 				       .nr = scribe->nr_syscall);
+			return -EDIVERGE;
 		}
 		scribe->orig_ret = event.extra->ret;
 	} else
@@ -163,22 +163,22 @@ static int get_nr_syscall(struct pt_regs *regs)
 	return nr;
 }
 
-void scribe_enter_syscall(struct pt_regs *regs)
+static int __scribe_enter_syscall(struct scribe_ps *scribe,
+				  struct pt_regs *regs)
 {
-	struct scribe_ps *scribe = current->scribe;
 	int num_sig_deferred;
-
-	if (!is_scribed(scribe))
-		return;
+	int ret;
 
 	scribe->nr_syscall = get_nr_syscall(regs);
 	if (is_scribe_syscall(scribe->nr_syscall))
-		return;
+		return 0;
 
 	if (should_scribe_syscalls(scribe) &&
-	    should_scribe_regs(scribe) &&
-	    scribe_regs(scribe, regs))
-		return;
+	    should_scribe_regs(scribe)) {
+		ret = scribe_regs(scribe, regs);
+		if (ret < 0)
+			return ret;
+	}
 
 	/* It should already be set to false, but let's be sure */
 	scribe->need_syscall_ret = false;
@@ -195,20 +195,38 @@ void scribe_enter_syscall(struct pt_regs *regs)
 	scribe_bookmark_point();
 
 	if (scribe_maybe_detach(scribe))
-		return;
+		return 0;
 
 	/* FIXME signals needs the return value */
 	if (!should_scribe_syscalls(scribe))
-		return;
+		return 0;
 
 	if (should_scribe_syscall_ret(scribe) ||
-	    is_interruptible_syscall(scribe->nr_syscall))
-		__scribe_need_syscall_ret(scribe);
+	    is_interruptible_syscall(scribe->nr_syscall)) {
+		ret = __scribe_need_syscall_ret(scribe);
+		if (ret < 0)
+			return ret;
+	}
 
 	recalc_sigpending();
+
+	return 0;
 }
 
-static void scribe_commit_syscall_record(struct scribe_ps *scribe,
+void scribe_enter_syscall(struct pt_regs *regs)
+{
+	struct scribe_ps *scribe = current->scribe;
+	int ret;
+
+	if (!is_scribed(scribe))
+		return;
+
+	ret = __scribe_enter_syscall(scribe, regs);
+	if (ret < 0)
+		scribe_emergency_stop(scribe->ctx, ERR_PTR(ret));
+}
+
+static int scribe_commit_syscall_record(struct scribe_ps *scribe,
 					 struct pt_regs *regs, long ret_value)
 {
 	union scribe_syscall_event_union event;
@@ -220,7 +238,7 @@ static void scribe_commit_syscall_record(struct scribe_ps *scribe,
 		event.regular = scribe_alloc_event(SCRIBE_EVENT_SYSCALL);
 
 	if (!event.generic)
-		goto err;
+		return -ENOMEM;
 
 	if (syscall_extra) {
 		event.extra->nr = scribe->nr_syscall;
@@ -234,16 +252,14 @@ static void scribe_commit_syscall_record(struct scribe_ps *scribe,
 	if (syscall_extra) {
 		if (scribe_queue_new_event(scribe->queue,
 				   SCRIBE_EVENT_SYSCALL_END))
-			goto err;
+			return -ENOMEM;
 	}
 
-	return;
-err:
-	scribe_emergency_stop(scribe->ctx, ERR_PTR(-ENOMEM));
+	return 0;
 }
 
-static void scribe_commit_syscall_replay(struct scribe_ps *scribe,
-					 struct pt_regs *regs, long ret_value)
+static int scribe_commit_syscall_replay(struct scribe_ps *scribe,
+					struct pt_regs *regs, long ret_value)
 {
 	struct scribe_event_syscall_end *event_end;
 	int syscall_extra = should_scribe_syscall_extra(scribe);
@@ -251,47 +267,49 @@ static void scribe_commit_syscall_replay(struct scribe_ps *scribe,
 	if (syscall_extra) {
 		event_end = scribe_dequeue_event_specific(scribe,
 						SCRIBE_EVENT_SYSCALL_END);
-		if (!IS_ERR(event_end))
-			scribe_free_event(event_end);
+		if (IS_ERR(event_end))
+			return PTR_ERR(event_end);
+		scribe_free_event(event_end);
 	}
 
 	if (scribe->orig_ret != ret_value) {
 		scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL_RET,
 			       .ret = ret_value);
+		return -EDIVERGE;
 	}
+	return 0;
 }
 
-void scribe_commit_syscall(struct scribe_ps *scribe, struct pt_regs *regs,
-			   long ret_value)
+int scribe_commit_syscall(struct scribe_ps *scribe, struct pt_regs *regs,
+			  long ret_value)
 {
 	if (!scribe->need_syscall_ret)
-		return;
+		return 0;
 
 	scribe->need_syscall_ret = false;
 
 	if (is_recording(scribe))
-		scribe_commit_syscall_record(scribe, regs, ret_value);
+		return scribe_commit_syscall_record(scribe, regs, ret_value);
 	else
-		scribe_commit_syscall_replay(scribe, regs, ret_value);
+		return scribe_commit_syscall_replay(scribe, regs, ret_value);
 }
 
-void scribe_exit_syscall(struct pt_regs *regs)
+static int __scribe_exit_syscall(struct scribe_ps *scribe, struct pt_regs *regs)
 {
-	struct scribe_ps *scribe = current->scribe;
-
-	if (!is_scribed(scribe))
-		return;
+	int ret;
 
 	if (is_scribe_syscall(scribe->nr_syscall))
-		return;
+		return 0;
 
-	scribe_commit_syscall(scribe, regs,
-			      syscall_get_return_value(current, regs));
+	ret = scribe_commit_syscall(scribe, regs,
+				    syscall_get_return_value(current, regs));
+	if (ret < 0)
+		return ret;
 
 	scribe_bookmark_point();
 
 	if (scribe_maybe_detach(scribe))
-		return;
+		return 0;
 
 	__scribe_allow_uaccess(scribe);
 	scribe_signal_leave_sync_point();
@@ -305,7 +323,22 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	recalc_sigpending_and_wake(current);
 
 	if (unlikely(!scribe->can_uaccess))
-		scribe_emergency_stop(scribe->ctx, ERR_PTR(-EINVAL));
+		return -EINVAL;
+
+	return 0;
+}
+
+void scribe_exit_syscall(struct pt_regs *regs)
+{
+	struct scribe_ps *scribe = current->scribe;
+	int ret;
+
+	if (!is_scribed(scribe))
+		return;
+
+	ret = __scribe_exit_syscall(scribe, regs);
+	if (ret < 0)
+		scribe_emergency_stop(scribe->ctx, ERR_PTR(ret));
 }
 
 SYSCALL_DEFINE0(get_scribe_flags)
