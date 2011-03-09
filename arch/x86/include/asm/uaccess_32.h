@@ -44,7 +44,7 @@ unsigned long __must_check __copy_from_user_ll_nocache_nozero
 static __always_inline unsigned long __must_check
 __copy_to_user_inatomic(void __user *to, const void *from, unsigned long n)
 {
-	unsigned long ret;
+	unsigned long ret, rets;
 	scribe_pre_uaccess(from, to, n, 0);
 	if (__builtin_constant_p(n)) {
 		switch (n) {
@@ -65,8 +65,8 @@ __copy_to_user_inatomic(void __user *to, const void *from, unsigned long n)
 		}
 	} else
 		ret = __copy_to_user_ll(to, from, n);
-	scribe_post_uaccess(from, to, n - ret, 0);
-	return ret;
+	rets = scribe_post_uaccess(from, to, n - ret, 0);
+	return max(ret, rets);
 }
 
 /**
@@ -98,7 +98,7 @@ __copy_from_user_inatomic(void *to, const void __user *from, unsigned long n)
 	 * but as the zeroing behaviour is only significant when n is not
 	 * constant, that shouldn't be a problem.
 	 */
-	unsigned long ret;
+	unsigned long ret, rets;
 	scribe_pre_uaccess(to, from, n, SCRIBE_DATA_INPUT);
 	if (__builtin_constant_p(n)) {
 		switch (n) {
@@ -116,8 +116,8 @@ __copy_from_user_inatomic(void *to, const void __user *from, unsigned long n)
 		}
 	} else
 		ret = __copy_from_user_ll_nozero(to, from, n);
-	scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
-	return ret;
+	rets = scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
+	return max(ret, rets);
 }
 
 /**
@@ -145,7 +145,7 @@ __copy_from_user_inatomic(void *to, const void __user *from, unsigned long n)
 static __always_inline unsigned long
 __copy_from_user(void *to, const void __user *from, unsigned long n)
 {
-	unsigned long ret;
+	unsigned long ret, rets;
 	might_fault();
 	scribe_pre_uaccess(to, from, n, SCRIBE_DATA_INPUT);
 	if (__builtin_constant_p(n)) {
@@ -164,14 +164,14 @@ __copy_from_user(void *to, const void __user *from, unsigned long n)
 		}
 	} else
 		ret = __copy_from_user_ll(to, from, n);
-	scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
-	return ret;
+	rets = scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
+	return max(ret, rets);
 }
 
 static __always_inline unsigned long __copy_from_user_nocache(void *to,
 				const void __user *from, unsigned long n)
 {
-	unsigned long ret;
+	unsigned long ret, rets;
 	might_fault();
 	scribe_pre_uaccess(to, from, n, SCRIBE_DATA_INPUT);
 	if (__builtin_constant_p(n)) {
@@ -190,19 +190,19 @@ static __always_inline unsigned long __copy_from_user_nocache(void *to,
 		}
 	} else
 		ret = __copy_from_user_ll_nocache(to, from, n);
-	scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
-	return ret;
+	rets = scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
+	return max(ret, rets);
 }
 
 static __always_inline unsigned long
 __copy_from_user_inatomic_nocache(void *to, const void __user *from,
 				  unsigned long n)
 {
-	unsigned long ret;
+	unsigned long ret, rets;
 	scribe_pre_uaccess(to, from, n, SCRIBE_DATA_INPUT);
 	ret = __copy_from_user_ll_nocache_nozero(to, from, n);
-	scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
-	return ret;
+	rets = scribe_post_uaccess(to, from, n - ret, SCRIBE_DATA_INPUT);
+	return max(ret, rets);
 }
 
 unsigned long __must_check copy_to_user(void __user *to,

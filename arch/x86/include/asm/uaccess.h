@@ -155,7 +155,7 @@ extern int __get_user_bad(void);
 
 #define get_user(x, ptr)						\
 ({									\
-	int __ret_gu;							\
+	int __ret_gu, __rets;						\
 	unsigned long __val_gu;						\
 	__chk_user_ptr(ptr);						\
 	might_fault();							\
@@ -178,11 +178,11 @@ extern int __get_user_bad(void);
 		__get_user_x(X, __ret_gu, __val_gu, ptr);		\
 		break;							\
 	}								\
-	scribe_post_uaccess(&__val_gu, ptr,				\
+	__rets = scribe_post_uaccess(&__val_gu, ptr,			\
 			    __ret_gu ? 0 : sizeof(*(ptr)),		\
 			    SCRIBE_DATA_INPUT);				\
 	(x) = (__typeof__(*(ptr)))__val_gu;				\
-	__ret_gu;							\
+	max(__ret_gu, __rets);						\
 })
 
 #define __put_user_x(size, x, ptr, __ret_pu)			\
@@ -255,7 +255,7 @@ extern void __put_user_8(void);
  */
 #define put_user(x, ptr)					\
 ({								\
-	int __ret_pu;						\
+	int __ret_pu, __rets;					\
 	__typeof__(*(ptr)) __pu_val;				\
 	__chk_user_ptr(ptr);					\
 	might_fault();						\
@@ -278,9 +278,9 @@ extern void __put_user_8(void);
 		__put_user_x(X, __pu_val, ptr, __ret_pu);	\
 		break;						\
 	}							\
-	scribe_post_uaccess(&__pu_val, ptr,			\
+	__rets = scribe_post_uaccess(&__pu_val, ptr,		\
 			    __ret_pu ? 0 : sizeof(*(ptr)), 0);	\
-	__ret_pu;						\
+	max(__ret_pu, __rets);					\
 })
 
 #define __put_user_size(x, ptr, size, retval, errret)			\
@@ -328,7 +328,8 @@ do {									\
 	default:							\
 		__put_user_bad();					\
 	}								\
-	scribe_post_uaccess(&__pu_val, ptr, size, 0);			\
+	/* FIXME handle the errors */					\
+	(void)scribe_post_uaccess(&__pu_val, ptr, size, 0);		\
 } while (0)
 
 #else
@@ -418,7 +419,8 @@ do {									\
 	default:							\
 		(x) = __get_user_bad();					\
 	}								\
-	scribe_post_uaccess(&(x), ptr, size, SCRIBE_DATA_INPUT);	\
+	/* FIXME handle the errors */					\
+	(void)scribe_post_uaccess(&(x), ptr, size, SCRIBE_DATA_INPUT);	\
 } while (0)
 
 #define __get_user_asm_ex(x, addr, itype, rtype, ltype)			\
@@ -429,30 +431,32 @@ do {									\
 
 #define __put_user_nocheck(x, ptr, size)			\
 ({								\
-	int __pu_err;						\
+	int __pu_err, __rets;					\
 	__typeof__(*(ptr)) __pu_val;				\
 	__typeof__(ptr) __pu_ptr;				\
 	__pu_val = x;						\
 	__pu_ptr = ptr;						\
 	scribe_pre_uaccess(&__pu_val, __pu_ptr, size, 0);	\
 	__put_user_size(__pu_val, __pu_ptr, (size), __pu_err, -EFAULT); \
-	scribe_post_uaccess(&__pu_val, __pu_ptr, __pu_err ? 0 : size, 0); \
-	__pu_err;						\
+	__rets = scribe_post_uaccess(&__pu_val, __pu_ptr,	\
+				     __pu_err ? 0 : size, 0);	\
+	max(__pu_err, __rets);					\
 })
 
 #define __get_user_nocheck(x, ptr, size)				\
 ({									\
-	int __gu_err;							\
+	int __gu_err, __rets;						\
 	unsigned long __gu_val;						\
 	__typeof__(ptr) __gu_ptr;					\
 	__gu_ptr = ptr;							\
 	scribe_pre_uaccess(&__gu_val, __gu_ptr, size,			\
 			   SCRIBE_DATA_INPUT);				\
 	__get_user_size(__gu_val, __gu_ptr, (size), __gu_err, -EFAULT);	\
-	scribe_post_uaccess(&__gu_val, __gu_ptr, __gu_err ? 0 : size,	\
-			    SCRIBE_DATA_INPUT);				\
+	__rets = scribe_post_uaccess(&__gu_val, __gu_ptr,		\
+				     __gu_err ? 0 : size,		\
+				     SCRIBE_DATA_INPUT);		\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
-	__gu_err;							\
+	max(__gu_err, __rets);						\
 })
 
 /* FIXME: this hack is definitely wrong -AK */

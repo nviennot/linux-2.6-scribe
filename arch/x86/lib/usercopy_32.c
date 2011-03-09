@@ -63,8 +63,9 @@ do {									   \
 		  "=&D" (__d2)						   \
 		: "i"(-EFAULT), "0"(count), "1"(count), "3"(src), "4"(dst) \
 		: "memory");						   \
-	scribe_post_uaccess(dst, src, res < 0 ? 0 : res,		   \
-			    SCRIBE_DATA_INPUT | SCRIBE_DATA_STRING);       \
+	if (scribe_post_uaccess(dst, src, res < 0 ? 0 : res,		   \
+				SCRIBE_DATA_INPUT | SCRIBE_DATA_STRING))   \
+		res = -EFAULT;						   \
 } while (0)
 
 /**
@@ -130,7 +131,7 @@ EXPORT_SYMBOL(strncpy_from_user);
 
 #define __do_clear_user(addr,size)					\
 do {									\
-	unsigned long _size = size;					\
+	unsigned long _size = size, rets;				\
 	int __d0;							\
 	might_fault();							\
 	scribe_pre_uaccess(NULL, addr, _size, SCRIBE_DATA_ZERO);	\
@@ -147,7 +148,9 @@ do {									\
 		_ASM_EXTABLE(1b,2b)					\
 		: "=&c"(size), "=&D" (__d0)				\
 		: "r"(size & 3), "0"(size / 4), "1"(addr), "a"(0));	\
-	scribe_post_uaccess(NULL, addr, _size - size, SCRIBE_DATA_ZERO); \
+	rets = scribe_post_uaccess(NULL, addr, _size - size,		\
+				   SCRIBE_DATA_ZERO);			\
+	size = max(rets, size);						\
 } while (0)
 
 /**

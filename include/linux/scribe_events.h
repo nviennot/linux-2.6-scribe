@@ -256,6 +256,8 @@ SCRIBE_EVENT_DIVERGE(data_ptr,
 	__field(__u32, user_ptr)
 )
 
+SCRIBE_EVENT_DIVERGE(efault)
+
 SCRIBE_EVENT_DIVERGE(data_content,
 	__field(__u16, offset)
 	__field(__u8, size)

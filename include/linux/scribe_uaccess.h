@@ -47,7 +47,7 @@
 /* FIXME Those two functions should be inlined */
 extern void scribe_pre_uaccess(const void *data, const void __user *user_ptr,
 			       size_t size, int flags);
-extern void scribe_post_uaccess(const void *data, const void __user *user_ptr,
+extern long scribe_post_uaccess(const void *data, const void __user *user_ptr,
 				size_t size, int flags);
 
 extern pgd_t *scribe_get_pgd(struct mm_struct *next, struct task_struct *tsk);

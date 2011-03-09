@@ -57,7 +57,8 @@ static inline __wsum csum_partial_copy_from_user(const void __user *src,
 	ret = csum_partial_copy_generic((__force void *)src, dst,
 					len, sum, err_ptr, NULL);
 	/* FIXME we don't have the number of bytes read */
-	scribe_post_uaccess(dst, src, len, SCRIBE_DATA_INPUT);
+	if (scribe_post_uaccess(dst, src, len, SCRIBE_DATA_INPUT))
+		*err_ptr = -EFAULT;
 	return ret;
 }
 
@@ -189,7 +190,8 @@ static inline __wsum csum_and_copy_to_user(const void *src,
 		scribe_pre_uaccess(src, dst, len, 0);
 		ret = csum_partial_copy_generic(src, (__force void *)dst,
 						len, sum, NULL, err_ptr);
-		scribe_post_uaccess(src, dst, len, 0);
+		if (scribe_post_uaccess(src, dst, len, 0))
+			*err_ptr = -EFAULT;
 		return ret;
 	}
 
