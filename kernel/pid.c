@@ -307,11 +307,10 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *target_pids)
 			ret = scribe_value(&nr);
 			if (ret < 0) {
 				nr = ret;
-				goto out_free;
-			}
-			if (nr < 0)
-				goto out_free;
-			tpid = nr;
+				if (ret != -EDIVERGE)
+					goto out_free;
+			} else
+				tpid = nr;
 		}
 
 		nr = set_pidmap(tmp, tpid);

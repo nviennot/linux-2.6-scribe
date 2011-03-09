@@ -1973,7 +1973,7 @@ SYSCALL_DEFINE5(waitid, int, which, pid_t, _upid, struct siginfo __user *,
 		return -EINVAL;
 	}
 
-	if (scribe_pre_wait(&wo, &ret, options)) {
+	if (scribe_pre_wait(&wo, &ret, options) && ret != -EDIVERGE) {
 		if (ret == 0 || ret == -EFAULT)
 			__clear_infop(infop);
 		return ret;
@@ -2029,7 +2029,7 @@ SYSCALL_DEFINE4(wait4, pid_t, _upid, int __user *, stat_addr,
 			__WNOTHREAD|__WCLONE|__WALL))
 		return -EINVAL;
 
-	if (scribe_pre_wait(&wo, &ret, options))
+	if (scribe_pre_wait(&wo, &ret, options) && ret != -EDIVERGE)
 		return ret;
 
 	if (wo.wo_scribe_pid)
