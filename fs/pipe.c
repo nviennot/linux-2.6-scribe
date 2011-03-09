@@ -1005,13 +1005,9 @@ static char *pipefs_dname(struct dentry *dentry, char *buffer, int buflen)
 {
 	struct scribe_ps *scribe = current->scribe;
 	unsigned long i_ino = dentry->d_inode->i_ino;
-	int ret;
 
-	if (is_scribed(scribe) && scribe->do_dpath_scribing) {
-		ret = scribe_value(&i_ino);
-		if (ret < 0)
-			return ERR_PTR(ret);
-	}
+	if (is_scribed(scribe) && scribe->do_dpath_scribing)
+		scribe_value(&i_ino);
 
 	return dynamic_dname(dentry, buffer, buflen, "pipe:[%lu]", i_ino);
 }
