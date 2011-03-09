@@ -1214,24 +1214,17 @@ static struct scribe_lock_region *find_locked_region(
 	return NULL;
 }
 
-void scribe_unlock_err(void *object, int err)
+static void scribe_unlock_region(struct scribe_ps *scribe,
+				 struct scribe_res_user *user,
+				 struct scribe_lock_region *lock_region,
+				 int err)
 {
-	struct scribe_ps *scribe = current->scribe;
-	struct scribe_res_user *user;
-	struct scribe_lock_region *lock_region;
 	struct file *file;
-
-	if (!should_handle_resources(scribe))
-		return;
-
-	user = &scribe->resources;
-	lock_region = find_locked_region(user, object);
-	BUG_ON(!lock_region);
 
 	list_del(&lock_region->node);
 
 	if (lock_region->flags & (SCRIBE_INODE_READ | SCRIBE_INODE_WRITE)) {
-		file = object;
+		file = lock_region->object;
 		scribe_unlock_err(file_inode(file), err);
 	}
 
@@ -1242,6 +1235,33 @@ void scribe_unlock_err(void *object, int err)
 		do_unlock_discard(scribe, lock_region);
 		list_add(&lock_region->node, &user->pre_alloc_regions);
 	}
+}
+
+void scribe_unlock_all_resources(struct scribe_ps *scribe)
+{
+	struct scribe_res_user *user = &scribe->resources;
+	struct scribe_lock_region *lock_region, *tmp;
+
+	list_for_each_entry_safe(lock_region, tmp,
+				 &user->locked_regions, node) {
+		scribe_unlock_region(scribe, user, lock_region, 0);
+	}
+}
+
+void scribe_unlock_err(void *object, int err)
+{
+	struct scribe_ps *scribe = current->scribe;
+	struct scribe_lock_region *lock_region;
+	struct scribe_res_user *user;
+
+	if (!should_handle_resources(scribe))
+		return;
+
+	user = &scribe->resources;
+	lock_region = find_locked_region(user, object);
+	BUG_ON(!lock_region);
+
+	scribe_unlock_region(scribe, user, lock_region, err);
 }
 
 void scribe_unlock(void *object)

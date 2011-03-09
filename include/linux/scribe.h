@@ -480,6 +480,7 @@ extern void scribe_unlock(void *object);
 extern void scribe_unlock_discard(void *object);
 extern void scribe_unlock_err(void *object, int err);
 extern void scribe_downgrade(void *object);
+extern void scribe_unlock_all_resources(struct scribe_ps *scribe);
 extern void scribe_assert_locked(void *object);
 
 /* Signals */
