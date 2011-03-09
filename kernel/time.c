@@ -62,12 +62,9 @@ EXPORT_SYMBOL(sys_tz);
  */
 SYSCALL_DEFINE1(time, time_t __user *, tloc)
 {
-	time_t i;
+	time_t i = get_seconds();
 
-	if (scribe_result(i, get_seconds())) {
-		scribe_emergency_stop(current->scribe->ctx, ERR_PTR(-ENOMEM));
-		return -ENOMEM;
-	}
+	scribe_value(&i);
 
 	if (tloc) {
 		if (put_user(i,tloc))
