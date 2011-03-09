@@ -52,6 +52,9 @@ static int scribe_connect(struct socket *sock, struct sockaddr *vaddr,
 
 	err = scribe_result(
 		ret, sock->real_ops->connect(sock, vaddr, sockaddr_len, flags));
+	if (err == -EDIVERGE)
+		return sock->real_ops->connect(sock, vaddr,
+					       sockaddr_len, flags);
 	return err ?: ret;
 }
 
@@ -90,6 +93,9 @@ static int scribe_getname(struct socket *sock, struct sockaddr *addr,
 
 out:
 	if (err) {
+		if (err == -EDIVERGE)
+			return sock->real_ops->getname(sock, addr,
+						       sockaddr_len, peer);
 		scribe_emergency_stop(scribe->ctx, ERR_PTR(err));
 		return err;
 	}
@@ -144,8 +150,12 @@ static int scribe_setsockopt(struct socket *sock, int level,
 	err = scribe_result(
 		ret, sock->real_ops->setsockopt(sock, level, optname,
 						optval, optlen));
-	if (err)
+	if (err) {
+		if (err == -EDIVERGE)
+			return sock->real_ops->setsockopt(sock, level, optname,
+							  optval, optlen);
 		return err;
+	}
 	if (ret < 0)
 		return ret;
 
@@ -166,13 +176,23 @@ static int scribe_getsockopt(struct socket *sock, int level,
 	err = scribe_result(
 		ret, sock->real_ops->getsockopt(sock, level, optname,
 						optval, optlen));
-	if (err)
+	if (err) {
+		if (err == -EDIVERGE)
+			return sock->real_ops->getsockopt(sock, level, optname,
+							  optval, optlen);
 		return err;
+	}
 	if (ret < 0)
 		return ret;
 
-	if (is_replaying(scribe))
+	if (is_replaying(scribe)) {
 		scribe_emul_copy_to_user(scribe, NULL, INT_MAX);
+		/*
+		 * FIXME We have no idea if the bytes copied is actually
+		 * correct (In case we diverge, we should fall back to the
+		 * real call.
+		 */
+	}
 	return ret;
 }
 
@@ -220,6 +240,10 @@ static int scribe_sendmsg(struct kiocb *iocb, struct socket *sock,
 
 out:
 	scribe_data_pop_flags();
+	if (err == -EDIVERGE) {
+		/* Diverge on a fake socket */
+		err = -ENOTCONN;
+	}
 	return err ?: ret;
 }
 
@@ -251,8 +275,14 @@ static int scribe_recvmsg(struct kiocb *iocb, struct socket *sock,
 	if (ret <= 0)
 		goto out;
 
-	if (is_replaying(scribe))
+	if (is_replaying(scribe)) {
 		scribe_emul_copy_to_user(scribe, NULL, INT_MAX);
+		/*
+		 * FIXME We have no idea if the bytes copied is actually
+		 * correct (In case we diverge, we should fall back to the
+		 * real call.
+		 */
+	}
 
 	err = scribe_value(&m->msg_namelen);
 	if (err)
@@ -261,6 +291,10 @@ static int scribe_recvmsg(struct kiocb *iocb, struct socket *sock,
 
 out:
 	scribe_data_pop_flags();
+	if (err == -EDIVERGE) {
+		/* Diverge on a fake socket */
+		err = -ENOTCONN;
+	}
 	return err ?: ret;
 }
 

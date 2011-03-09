@@ -341,13 +341,9 @@ static char *sockfs_dname(struct dentry *dentry, char *buffer, int buflen)
 {
 	struct scribe_ps *scribe = current->scribe;
 	unsigned long i_ino = dentry->d_inode->i_ino;
-	int ret;
 
-	if (is_scribed(scribe) && scribe->do_dpath_scribing) {
-		ret = scribe_value(&i_ino);
-		if (ret < 0)
-			return ERR_PTR(ret);
-	}
+	if (is_scribed(scribe) && scribe->do_dpath_scribing)
+		scribe_value(&i_ino);
 
 	return dynamic_dname(dentry, buffer, buflen, "socket:[%lu]", i_ino);
 }
@@ -1522,8 +1518,11 @@ SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
 			goto real_accept;
 
 		err = scribe_value(&should_fake_accept);
-		if (err < 0)
+		if (err < 0) {
+			if (err == -EDIVERGE)
+				goto real_accept;
 			goto out_put;
+		}
 
 		if (!should_fake_accept)
 			goto real_accept;
