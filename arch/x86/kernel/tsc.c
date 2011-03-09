@@ -992,8 +992,15 @@ int scribe_handle_rdtsc(struct scribe_ps *scribe, struct pt_regs *regs)
 	} else {
 		event = scribe_dequeue_event_specific(scribe,
 						      SCRIBE_EVENT_RDTSC);
-		if (IS_ERR(event))
-			return PTR_ERR(event);
+		if (IS_ERR(event)) {
+			ret = PTR_ERR(event);
+			if (ret == -EDIVERGE) {
+				rdtscll(tsc);
+				goto skip;
+			}
+
+			return ret;
+		}
 
 		tsc = event->tsc;
 		scribe_free_event(event);
