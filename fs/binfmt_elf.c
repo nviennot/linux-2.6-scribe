@@ -166,9 +166,8 @@ create_elf_tables(struct linux_binprm *bprm, struct elfhdr *exec,
 	 * evictions by the processes running on the same package. One
 	 * thing we can do is to shuffle the initial stack for them.
 	 */
-	ret = scribe_result(p, arch_align_stack(p));
-	if (ret)
-		return ret;
+	p = arch_align_stack(p);
+	scribe_value(&p);
 
 	/*
 	 * If this architecture has a platform capability string, copy it
@@ -598,16 +597,14 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	unsigned long reloc_func_desc = 0;
 	int executable_stack = EXSTACK_DEFAULT;
 	unsigned long def_flags = 0;
-	unsigned long randomized_stack_top;
+	unsigned long randomized_stack_top = randomize_stack_top(STACK_TOP);
+
 	struct {
 		struct elfhdr elf_ex;
 		struct elfhdr interp_elf_ex;
 	} *loc;
 
-	retval = scribe_result(randomized_stack_top,
-			       randomize_stack_top(STACK_TOP));
-	if (retval)
-		return retval;
+	scribe_value(&randomized_stack_top);
 
 	loc = kmalloc(sizeof(*loc), GFP_KERNEL);
 	if (!loc) {
@@ -973,13 +970,8 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 
 #ifdef arch_randomize_brk
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {
-		retval = scribe_result(current->mm->brk,
-				       arch_randomize_brk(current->mm));
-		if (retval) {
-			send_sig(SIGKILL, current, 0);
-			goto out;
-		}
-
+		current->mm->brk = arch_randomize_brk(current->mm);
+		scribe_value(&current->mm->brk);
 		current->mm->start_brk = current->mm->brk;
 	}
 #endif
