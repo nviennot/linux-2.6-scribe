@@ -366,11 +366,12 @@ static int is_deterministic(struct file *file)
 }
 
 static ssize_t scribe_do_read(struct file *file, char __user *buf,
-			      ssize_t len, loff_t *ppos)
+			      ssize_t orig_len, loff_t *ppos)
 {
 	struct scribe_ps *scribe = current->scribe;
 	int force_block = 0;
 	ssize_t ret;
+	ssize_t len = orig_len;
 
 	if (!is_scribed(scribe))
 		return do_read(file, buf, len, ppos, force_block);
@@ -398,7 +399,16 @@ static ssize_t scribe_do_read(struct file *file, char __user *buf,
 	if (is_recording(scribe))
 		goto out;
 
-	return scribe_emul_copy_to_user(scribe, buf, len);
+	ret = scribe_emul_copy_to_user(scribe, buf, len);
+	if (ret)
+		return ret;
+
+	/*
+	 * No bytes where copied: A diverge might have happened,
+	 * going the real path...
+	 */
+	force_block = 0;
+	len = orig_len;
 
 out:
 	scribe->in_read_write = true;
@@ -942,7 +952,12 @@ static ssize_t do_readv_writev(int type, struct file *file,
 static ssize_t io_scribe_emul_copy_to_user(struct file *filp, char __user *buf,
 					   size_t len, loff_t *ppos)
 {
-	return scribe_emul_copy_to_user(current->scribe, buf, len);
+	ssize_t ret;
+
+	ret = scribe_emul_copy_to_user(current->scribe, buf, len);
+	if (!ret && len)
+		return -EDIVERGE;
+	return ret;
 }
 
 static ssize_t scribe_do_readv_writev(int type, struct file *file,
@@ -993,7 +1008,10 @@ static ssize_t scribe_do_readv_writev(int type, struct file *file,
 
 		ret =  __do_loop_readv_writev(file, iov, nr_segs, len, pos,
 					      io_scribe_emul_copy_to_user);
-		goto free;
+		if (ret && ret != -EDIVERGE)
+			goto free;
+		force_block = 0;
+		len = 0;
 	}
 
 out:
