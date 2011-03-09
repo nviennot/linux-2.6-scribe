@@ -1995,6 +1995,7 @@ static int scribe_page_access_replay(struct scribe_ps *scribe,
 			scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_MEM_OWNED,
 				       .address = address & PAGE_MASK,
 				       .write_access = write_access);
+			return -EDIVERGE;
 		}
 
 		if (atomic_read(&page->serial) < serial)
