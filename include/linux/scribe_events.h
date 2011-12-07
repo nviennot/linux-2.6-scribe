@@ -304,6 +304,8 @@ SCRIBE_EVENT_DIVERGE(regs,
 	__field(struct pt_regs, regs)
 )
 
+SCRIBE_EVENT_DIVERGE(queue_not_empty)
+
 #undef __header_regular
 #undef __header_sized
 #undef __header_diverge

@@ -1033,6 +1033,11 @@ static void scribe_do_exit(struct task_struct *p, long code)
 	scribe_commit_syscall(scribe, task_pt_regs(p), code);
 	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);
 
+	if (is_replaying(scribe) &&
+	    !scribe_is_queue_dead(scribe->queue, SCRIBE_WAIT)) {
+		scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_QUEUE_NOT_EMPTY);
+	}
+
 	__scribe_detach(scribe);
 
 out:
