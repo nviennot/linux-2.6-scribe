@@ -827,8 +827,8 @@ asmlinkage long sys_mmap_pgoff(unsigned long addr, unsigned long len,
 asmlinkage long sys_old_mmap(struct mmap_arg_struct __user *arg);
 
 #ifdef CONFIG_SCRIBE
-asmlinkage long sys_get_scribe_flags(void);
-asmlinkage long sys_set_scribe_flags(int flags);
+asmlinkage long sys_get_scribe_flags(pid_t pid, unsigned long __user *flags);
+asmlinkage long sys_set_scribe_flags(pid_t pid, unsigned long flags);
 #endif
 
 #endif

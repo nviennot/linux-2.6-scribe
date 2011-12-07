@@ -1056,6 +1056,9 @@ void scribe_mem_exit_st(struct scribe_ps *scribe)
 
 void scribe_mem_reload(struct scribe_ps *scribe)
 {
+	if (current->scribe != scribe)
+		return;
+
 	/*
 	 * FIXME we should actually flush the cache and stuff, but on i386 we
 	 * don't need it.

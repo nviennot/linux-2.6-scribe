@@ -342,30 +342,55 @@ void scribe_ret_from_fork(struct pt_regs *regs)
 	__scribe_allow_uaccess(scribe);
 }
 
-SYSCALL_DEFINE0(get_scribe_flags)
+static struct scribe_ps *find_process_by_pid(pid_t pid)
 {
-	struct scribe_ps *scribe = current->scribe;
-	if (!is_scribed(scribe))
-		return -EPERM;
-
-	return scribe->flags;
+	struct task_struct *t;
+	t = pid ? find_task_by_vpid(pid) : current;
+	return t->scribe;
 }
 
-SYSCALL_DEFINE1(set_scribe_flags, int, flags)
+static int do_scribe_flags(pid_t pid, unsigned long *in_flags,
+			   unsigned long __user *out_flags)
 {
-	struct scribe_ps *scribe = current->scribe;
-	int old_flags;
+	struct scribe_ps *scribe;
+	unsigned long old_flags = 0;
+	int err;
 
+	rcu_read_lock();
+	err = -ESRCH;
+	scribe = find_process_by_pid(pid);
+	if (!scribe)
+		goto out;
+
+	err = -EINVAL;
 	if (!is_scribed(scribe))
-		return -EPERM;
+		goto out;
 
 	old_flags = scribe->flags;
+	if (in_flags) {
+		/* We allow only enable flags to be set */
+		scribe->flags &= ~SCRIBE_PS_ENABLE_ALL;
+		scribe->flags |= *in_flags & SCRIBE_PS_ENABLE_ALL;
+		scribe_mem_reload(scribe);
+	}
 
-	/* We allow only enable flags to be set */
-	scribe->flags &= ~SCRIBE_PS_ENABLE_ALL;
-	scribe->flags |= flags & SCRIBE_PS_ENABLE_ALL;
+	err = 0;
+out:
+	rcu_read_unlock();
 
-	scribe_mem_reload(scribe);
+	if (out_flags && !err && put_user(old_flags, out_flags))
+	    err = -EFAULT;
+	return err;
+}
 
-	return old_flags;
+SYSCALL_DEFINE2(get_scribe_flags, pid_t, pid,
+		unsigned long __user *, flags)
+{
+	return do_scribe_flags(pid, NULL, flags);
+}
+
+SYSCALL_DEFINE2(set_scribe_flags, pid_t, pid,
+		unsigned long, flags)
+{
+	return do_scribe_flags(pid, &flags, NULL);
 }
