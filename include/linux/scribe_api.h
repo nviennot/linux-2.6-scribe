@@ -187,6 +187,7 @@ struct scribe_event_sized {
 struct scribe_event_diverge {
 	struct scribe_event h;
 	__u32 pid;
+	__u32 num_ev_consumed;
 	__u64 last_event_offset;
 } __attribute__((packed));
 

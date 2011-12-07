@@ -107,6 +107,7 @@ struct scribe_queue {
 	unsigned int fence_serial;
 
 	loff_t last_event_offset;
+	unsigned int num_ev_consumed;
 };
 
 extern void scribe_init_stream(struct scribe_stream *stream);
@@ -391,6 +392,7 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 		*__event = (struct##_type) {				\
 			.h.h.type = _type,				\
 			.h.pid = sp->queue->pid,			\
+			.h.num_ev_consumed = (sp)->queue->num_ev_consumed, \
 			.h.last_event_offset = (sp)->queue->last_event_offset, \
 			__VA_ARGS__					\
 		};							\

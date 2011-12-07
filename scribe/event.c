@@ -47,6 +47,7 @@ static void init_queue(struct scribe_queue *queue,
 	memset(&queue->fence_events, 0, sizeof(queue->fence_events));
 	queue->fence_serial = 0;
 	queue->last_event_offset = -1;
+	queue->num_ev_consumed = 0;
 }
 
 static void exit_queue(struct scribe_queue *queue)
@@ -416,6 +417,7 @@ struct scribe_event *scribe_dequeue_event(struct scribe_queue *queue, int wait)
 	}
 
 	queue->last_event_offset = event->log_offset;
+	queue->num_ev_consumed++;
 	return event;
 }
 
