@@ -1463,9 +1463,9 @@ static void scribe_double_downgrade(struct dentry *p1, struct dentry *p2)
 	if (!is_ps_scribed(current))
 		return;
 
-	scribe_unlock(p1->d_inode);
+	scribe_downgrade(p1->d_inode);
 	if (p1 != p2)
-		scribe_unlock(p2->d_inode);
+		scribe_downgrade(p2->d_inode);
 }
 
 static void scribe_double_unlock(struct dentry *p1, struct dentry *p2)
@@ -1473,9 +1473,9 @@ static void scribe_double_unlock(struct dentry *p1, struct dentry *p2)
 	if (!is_ps_scribed(current))
 		return;
 
-	scribe_downgrade(p1->d_inode);
+	scribe_unlock(p1->d_inode);
 	if (p1 != p2)
-		scribe_downgrade(p2->d_inode);
+		scribe_unlock(p2->d_inode);
 }
 
 int vfs_create(struct inode *dir, struct dentry *dentry, int mode,
