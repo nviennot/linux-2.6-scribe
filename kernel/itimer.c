@@ -12,6 +12,7 @@
 #include <linux/time.h>
 #include <linux/posix-timers.h>
 #include <linux/hrtimer.h>
+#include <linux/scribe.h>
 #include <trace/events/timer.h>
 
 #include <asm/uaccess.h>
@@ -254,6 +255,8 @@ again:
 unsigned int alarm_setitimer(unsigned int seconds)
 {
 	struct itimerval it_new, it_old;
+	struct scribe_ps *scribe = current->scribe;
+	int err;
 
 #if BITS_PER_LONG < 64
 	if (seconds > INT_MAX)
@@ -272,6 +275,14 @@ unsigned int alarm_setitimer(unsigned int seconds)
 	if ((!it_old.it_value.tv_sec && it_old.it_value.tv_usec) ||
 	      it_old.it_value.tv_usec >= 500000)
 		it_old.it_value.tv_sec++;
+
+	if (is_scribed(scribe)) {
+		err = scribe_need_syscall_ret(scribe);
+		if (err)
+			scribe_kill(scribe->ctx, err);
+		else if (is_replaying(scribe))
+			return scribe->orig_ret;
+	}
 
 	return it_old.it_value.tv_sec;
 }
