@@ -220,7 +220,7 @@ static int dev_open(struct inode *inode, struct file *file)
 	return 0;
 
 out_ctx:
-	scribe_exit_context(dev->ctx);
+	scribe_free_context(dev->ctx);
 out_dev:
 	kfree(dev);
 out:
@@ -236,7 +236,7 @@ static int dev_release(struct inode *inode, struct file *file)
 	if (dev->pending_event)
 		scribe_free_event(dev->pending_event);
 
-	scribe_exit_context(dev->ctx);
+	scribe_free_context(dev->ctx);
 	mutex_destroy(&dev->lock_read);
 	mutex_destroy(&dev->lock_write);
 	kfree(dev);

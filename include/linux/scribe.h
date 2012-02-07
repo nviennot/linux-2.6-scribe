@@ -359,7 +359,7 @@ static inline void scribe_kill(struct scribe_context *ctx, long error)
 	__scribe_kill(ctx, ERR_PTR(error));
 }
 
-extern void scribe_exit_context(struct scribe_context *ctx);
+extern void scribe_free_context(struct scribe_context *ctx);
 
 extern int scribe_start(struct scribe_context *ctx, unsigned long flags,
 			int backtrace_len);

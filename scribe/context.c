@@ -85,7 +85,8 @@ static void wait_for_ctx_empty(struct scribe_context *ctx)
 	wait_event(ctx->queues_wait, list_empty(&ctx->queues));
 }
 
-void scribe_exit_context(struct scribe_context *ctx)
+static void clear_nsproxies(struct scribe_context *ctx);
+void scribe_free_context(struct scribe_context *ctx)
 {
 	scribe_kill(ctx, 0);
 	wait_for_ctx_empty(ctx);
@@ -94,6 +95,7 @@ void scribe_exit_context(struct scribe_context *ctx)
 	scribe_free_mm_context(ctx->mm_ctx);
 	scribe_free_res_context(ctx->res_ctx);
 	scribe_bookmark_free(ctx->bmark);
+	clear_nsproxies(ctx);
 
 	scribe_put_context(ctx);
 }
@@ -166,6 +168,7 @@ static int context_start(struct scribe_context *ctx, unsigned long flags,
 
 	atomic_set(&ctx->signal_cookie, 0);
 
+	clear_nsproxies(ctx); /* cleanup from a previous run */
 	setup_monitor_nsproxy(ctx);
 
 	return 0;
@@ -179,7 +182,6 @@ static int context_start(struct scribe_context *ctx, unsigned long flags,
  * - an error (IS_ERR(reason) == 1): something bad happened, such as -ENODATA.
  * - a diverge event: a specific diverge error happened.
  *
- * XXX It temporarly releases tasks_lock
  */
 static void context_idle(struct scribe_context *ctx,
 			 struct scribe_event *reason)
@@ -226,10 +228,6 @@ static void context_idle(struct scribe_context *ctx,
 		scribe_free_event(ctx->diverge_event);
 		ctx->diverge_event = NULL;
 	}
-
-	spin_unlock(&ctx->tasks_lock);
-	clear_nsproxies(ctx);
-	spin_lock(&ctx->tasks_lock);
 
 	wake_up(&ctx->tasks_wait);
 }
