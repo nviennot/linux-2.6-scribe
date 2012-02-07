@@ -1287,9 +1287,12 @@ restart:
 		newu->mnt	= mntget(otheru->mnt);
 	}
 
-	/* If it's the same scribe context, it's deterministic */
-	sk->sk_scribe_deterministic = newsk->sk_scribe_deterministic =
-		(sk->sk_scribe_ctx == newsk->sk_scribe_ctx);
+
+	if (sk->sk_scribe_ctx) {
+		/* If it's the same scribe context, it's deterministic */
+		sk->sk_scribe_deterministic = newsk->sk_scribe_deterministic =
+			(sk->sk_scribe_ctx == other->sk_scribe_ctx);
+	}
 
 	/* Set credentials */
 	sk->sk_peercred = other->sk_peercred;
