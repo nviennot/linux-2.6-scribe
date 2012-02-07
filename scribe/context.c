@@ -156,6 +156,7 @@ static int context_start(struct scribe_context *ctx, unsigned long flags,
 	ctx->backtrace = backtrace;
 
 	ctx->flags = flags;
+	ctx->last_error = 0;
 
 	/*
 	 * TODO reset only when context_start() isn't called for the first
@@ -229,6 +230,8 @@ static void context_idle(struct scribe_context *ctx,
 	spin_unlock(&ctx->tasks_lock);
 	clear_nsproxies(ctx);
 	spin_lock(&ctx->tasks_lock);
+
+	wake_up(&ctx->tasks_wait);
 }
 
 static int event_diverge_max_size_type(void)
@@ -314,7 +317,6 @@ void __scribe_kill(struct scribe_context *ctx, struct scribe_event *reason)
 	 * more details.
 	 */
 	context_idle(ctx, reason);
-	wake_up(&ctx->tasks_wait);
 
 	/*
 	 * The tasks list is most likely to be empty by now.
@@ -622,7 +624,6 @@ void __scribe_detach(struct scribe_ps *scribe)
 	if (list_empty(&ctx->tasks) && !is_scribe_context_dead(ctx))
 		context_idle(ctx, NULL);
 	spin_unlock(&ctx->tasks_lock);
-	wake_up(&ctx->tasks_wait);
 
 	/*
 	 * The sighand lock guards against some races within the signal code.
