@@ -742,16 +742,19 @@ void scribe_data_push_flags(int flags)
 	scribe->old_data_flags = scribe->data_flags;
 	scribe->data_flags = flags;
 }
+EXPORT_SYMBOL(scribe_data_push_flags);
 
 void scribe_data_det(void)
 {
 	scribe_data_push_flags(0);
 }
+EXPORT_SYMBOL(scribe_data_det);
 
 void scribe_data_non_det(void)
 {
 	scribe_data_push_flags(SCRIBE_DATA_NON_DETERMINISTIC);
 }
+EXPORT_SYMBOL(scribe_data_non_det);
 
 void scribe_data_need_info(void)
 {
@@ -763,11 +766,13 @@ void scribe_data_non_det_need_info(void)
 	scribe_data_push_flags(SCRIBE_DATA_NON_DETERMINISTIC |
 			       SCRIBE_DATA_NEED_INFO);
 }
+EXPORT_SYMBOL(scribe_data_non_det_need_info);
 
 void scribe_data_ignore(void)
 {
 	scribe_data_push_flags(SCRIBE_DATA_IGNORE);
 }
+EXPORT_SYMBOL(scribe_data_ignore);
 
 void scribe_data_pop_flags(void)
 {
@@ -777,3 +782,4 @@ void scribe_data_pop_flags(void)
 
 	scribe->data_flags = scribe->old_data_flags;
 }
+EXPORT_SYMBOL(scribe_data_pop_flags);
