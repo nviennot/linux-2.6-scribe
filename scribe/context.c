@@ -300,12 +300,12 @@ void __scribe_kill(struct scribe_context *ctx, struct scribe_event *reason)
 {
 	struct scribe_ps *scribe;
 
-	spin_lock(&ctx->tasks_lock);
+	assert_spin_locked(&ctx->tasks_lock);
 
 	if (is_scribe_context_dead(ctx)) {
 		if (!IS_ERR(reason))
 			scribe_free_event(reason);
-		goto out;
+		return;
 	}
 
 	/*
@@ -339,9 +339,6 @@ void __scribe_kill(struct scribe_context *ctx, struct scribe_event *reason)
 		wake_up_process(scribe->p);
 	}
 	rcu_read_unlock();
-
-out:
-	spin_unlock(&ctx->tasks_lock);
 }
 
 /*
