@@ -357,7 +357,9 @@ extern void __scribe_kill(struct scribe_context *ctx,
 			  struct scribe_event *reason);
 static inline void scribe_kill(struct scribe_context *ctx, long error)
 {
+	spin_lock(&ctx->tasks_lock);
 	__scribe_kill(ctx, ERR_PTR(error));
+	spin_unlock(&ctx->tasks_lock);
 }
 
 extern void scribe_free_context(struct scribe_context *ctx);
@@ -377,8 +379,9 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 #define scribe_get_diverge_event(sp, _type)				\
 ({									\
 	struct scribe_event_diverge *__event;				\
-	__event = xchg(&(sp)->ctx->diverge_event, NULL);		\
+	__event = (sp)->ctx->diverge_event;				\
 	if (__event) {							\
+		(sp)->ctx->diverge_event = NULL;			\
 		__event->h.type = _type;				\
 		__event->pid = (sp)->queue->pid;			\
 		__event->fatal = 1;					\
@@ -391,7 +394,9 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 
 #define scribe_diverge(sp, _type, ...)					\
 ({									\
-	struct##_type *__event = scribe_get_diverge_event(sp, _type);	\
+	struct##_type *__event;						\
+	spin_lock(&(sp)->ctx->tasks_lock);				\
+	__event = scribe_get_diverge_event(sp, _type);			\
 	if (!IS_ERR(__event)) {						\
 		*__event = (struct##_type) {				\
 			.h.h.type = _type,				\
@@ -403,6 +408,7 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 		};							\
 	}								\
 	__scribe_kill((sp)->ctx, (struct scribe_event *)__event);	\
+	spin_unlock(&(sp)->ctx->tasks_lock);				\
 })
 
 #define scribe_mutation(sp, _type, ...)					\

@@ -237,6 +237,7 @@ static void ensure_data_correctness(struct scribe_ps *scribe,
 	if (offset == -1)
 		return;
 
+	spin_lock(&scribe->ctx->tasks_lock);
 	de = scribe_get_diverge_event(scribe,
 				      SCRIBE_EVENT_DIVERGE_DATA_CONTENT);
 	if (!IS_ERR(de)) {
@@ -246,6 +247,7 @@ static void ensure_data_correctness(struct scribe_ps *scribe,
 		memset(de->data + de->size, 0, sizeof(de->data) - de->size);
 	}
 	__scribe_kill(scribe->ctx, (struct scribe_event *)de);
+	spin_unlock(&scribe->ctx->tasks_lock);
 }
 
 static void scribe_post_uaccess_record(struct scribe_ps *scribe,
