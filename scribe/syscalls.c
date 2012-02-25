@@ -421,26 +421,26 @@ void scribe_ret_from_fork(struct pt_regs *regs)
 	__scribe_allow_uaccess(scribe);
 }
 
-static struct scribe_ps *find_process_by_pid(pid_t pid)
+static inline struct task_struct *find_process_by_pid(pid_t pid)
 {
-	struct task_struct *t;
-	t = pid ? find_task_by_vpid(pid) : current;
-	return t->scribe;
+	return pid ? find_task_by_vpid(pid) : current;
 }
 
 static int do_scribe_flags(pid_t pid,
 			   unsigned long *in_flags, int duration,
 			   unsigned long __user *out_flags)
 {
+	struct task_struct *t;
 	struct scribe_ps *scribe;
 	unsigned long old_flags = 0;
 	int err;
 
 	rcu_read_lock();
 	err = -ESRCH;
-	scribe = find_process_by_pid(pid);
-	if (!scribe)
+	t = find_process_by_pid(pid);
+	if (!t)
 		goto out;
+	scribe = t->scribe;
 
 	err = -EINVAL;
 	if (!is_scribed(scribe))
