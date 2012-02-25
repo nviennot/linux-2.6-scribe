@@ -341,7 +341,11 @@ ENTRY(sys_call_table)
 #ifdef CONFIG_SCRIBE
 	.long sys_get_scribe_flags
 	.long sys_set_scribe_flags	/* 340 */
+	.long sys_scribe_send_event
+	.long sys_scribe_recv_event
 #else
+	.long sys_ni_syscall
+	.long sys_ni_syscall
 	.long sys_ni_syscall
 	.long sys_ni_syscall
 #endif

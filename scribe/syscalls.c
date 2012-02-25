@@ -115,7 +115,9 @@ static int scribe_regs(struct scribe_ps *scribe, struct pt_regs *regs)
 static inline int is_scribe_syscall(int nr)
 {
 	return nr == __NR_get_scribe_flags ||
-	       nr == __NR_set_scribe_flags;
+	       nr == __NR_set_scribe_flags ||
+	       nr == __NR_scribe_send_event ||
+	       nr == __NR_scribe_recv_event;
 }
 
 static int scribe_need_syscall_ret_record(struct scribe_ps *scribe)
@@ -468,4 +470,76 @@ SYSCALL_DEFINE3(set_scribe_flags, pid_t, pid,
 		int, duration)
 {
 	return do_scribe_flags(pid, &flags, duration, NULL);
+}
+
+SYSCALL_DEFINE1(scribe_send_event, const struct scribe_event __user *, uevent)
+{
+	struct scribe_ps *scribe = current->scribe;
+	int size_offset;
+	struct scribe_event_sized dummy;
+	struct scribe_event *event;
+
+	if (!is_recording(scribe))
+		return -EPERM;
+
+	size_offset = offsetof(struct scribe_event_sized, size)
+		    - offsetof(struct scribe_event_sized, h.payload_offset);
+
+	if (copy_from_user(&dummy.h.type, uevent, sizeof(dummy.h.type)))
+		return -EFAULT;
+
+	if (is_sized_type(dummy.h.type)) {
+		if (copy_from_user(&dummy.size, ((char *) uevent) + size_offset,
+			       sizeof(dummy.size)))
+			return -EFAULT;
+		event = scribe_alloc_event_sized(dummy.h.type, dummy.size);
+	} else {
+		event = scribe_alloc_event(dummy.h.type);
+	}
+
+	if (!event)
+		return -ENOMEM;
+
+	if (copy_from_user(get_event_payload(event), uevent,
+			   sizeof_event_payload(&dummy.h))) {
+		scribe_free_event(event);
+		return -EFAULT;
+	}
+
+	scribe_queue_event(scribe->queue, event);
+
+	return 0;
+}
+
+SYSCALL_DEFINE2(scribe_recv_event, struct scribe_event __user *, uevent,
+		size_t, size)
+{
+	struct scribe_ps *scribe = current->scribe;
+	struct scribe_event *event;
+	size_t payload_size;
+	int ret;
+
+	if (!is_replaying(scribe))
+		return -EPERM;
+
+	event = scribe_dequeue_event(scribe->queue, SCRIBE_WAIT_INTERRUPTIBLE);
+
+	if (IS_ERR(event))
+		return PTR_ERR(event);
+
+	payload_size = sizeof_event_payload(event);
+
+	ret = -EAGAIN;
+	if (size < payload_size)
+		goto out;
+
+	ret = -EFAULT;
+	if (copy_to_user(uevent, get_event_payload(event), payload_size))
+		goto out;
+
+	ret = 0;
+
+out:
+	scribe_free_event(event);
+	return ret;
 }
