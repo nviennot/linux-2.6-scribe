@@ -31,6 +31,7 @@ struct scribe_pump {
 	struct completion done;
 	char *buffer;
 	struct file *logfile;
+	int flags;
 };
 
 /* Record */
@@ -527,12 +528,11 @@ retry:
 static int pump_kthread(void *_pump)
 {
 	struct scribe_pump *pump = _pump;
-	struct scribe_context *ctx = pump->ctx;
 
-	if (ctx->flags & SCRIBE_RECORD)
-		event_pump_record(ctx, pump->buffer, pump->logfile);
-	else if (ctx->flags & SCRIBE_REPLAY)
-		event_pump_replay(ctx, pump->buffer, pump->logfile);
+	if (pump->flags & SCRIBE_RECORD)
+		event_pump_record(pump->ctx, pump->buffer, pump->logfile);
+	else if (pump->flags & SCRIBE_REPLAY)
+		event_pump_replay(pump->ctx, pump->buffer, pump->logfile);
 	else
 		BUG();
 
@@ -554,6 +554,7 @@ struct scribe_pump *scribe_pump_alloc(struct scribe_context *ctx)
 	pump->kthread = NULL;
 	init_completion(&pump->done);
 	pump->logfile = NULL;
+	pump->flags = 0;
 
 	pump->buffer = (char *)__get_free_pages(GFP_KERNEL, PUMP_BUFFER_ORDER);
 	if (!pump->buffer) {
@@ -601,6 +602,7 @@ void scribe_pump_start(struct scribe_pump *pump, int state,
 {
 	get_file(logfile);
 	pump->logfile = logfile;
+	pump->flags = state;
 
 	get_task_struct(pump->kthread);
 	INIT_COMPLETION(pump->done);
