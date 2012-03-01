@@ -1499,13 +1499,6 @@ EXPORT_SYMBOL_GPL(hrtimer_init_sleeper);
 
 static int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mode)
 {
-	struct scribe_ps *scribe = current->scribe;
-
-	scribe_need_syscall_ret(scribe);
-
-	if (is_replaying(scribe))
-		return !scribe->orig_ret;
-
 	hrtimer_init_sleeper(t, current);
 
 	do {
@@ -1529,11 +1522,12 @@ static int __sched do_nanosleep(struct hrtimer_sleeper *t, enum hrtimer_mode mod
 
 static int update_rmtp(struct hrtimer *timer, struct timespec __user *rmtp)
 {
+	struct scribe_ps *scribe = current->scribe;
 	struct timespec rmt;
 	ktime_t rem;
 
 	rem = hrtimer_expires_remaining(timer);
-	if (rem.tv64 <= 0)
+	if (rem.tv64 <= 0 && !is_replaying(scribe))
 		return 0;
 	rmt = ktime_to_timespec(rem);
 
@@ -1547,16 +1541,26 @@ static int update_rmtp(struct hrtimer *timer, struct timespec __user *rmtp)
 
 long __sched hrtimer_nanosleep_restart(struct restart_block *restart)
 {
+	struct scribe_ps *scribe = current->scribe;
 	struct hrtimer_sleeper t;
 	struct timespec __user  *rmtp;
 	int ret = 0;
+
+	ret = scribe_need_syscall_ret(scribe);
+	if (ret < 0)
+		return ret;
 
 	hrtimer_init_on_stack(&t.timer, restart->nanosleep.index,
 				HRTIMER_MODE_ABS);
 	hrtimer_set_expires_tv64(&t.timer, restart->nanosleep.expires);
 
-	if (do_nanosleep(&t, HRTIMER_MODE_ABS))
-		goto out;
+	if (is_replaying(scribe)) {
+		if (scribe->orig_ret == 0)
+			goto out;
+	} else {
+		if (do_nanosleep(&t, HRTIMER_MODE_ABS))
+			goto out;
+	}
 
 	rmtp = restart->nanosleep.rmtp;
 	if (rmtp) {
@@ -1575,10 +1579,15 @@ out:
 long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 		       const enum hrtimer_mode mode, const clockid_t clockid)
 {
+	struct scribe_ps *scribe = current->scribe;
 	struct restart_block *restart;
 	struct hrtimer_sleeper t;
 	int ret = 0;
 	unsigned long slack;
+
+	ret = scribe_need_syscall_ret(scribe);
+	if (ret < 0)
+		return ret;
 
 	slack = current->timer_slack_ns;
 	if (rt_task(current))
@@ -1586,8 +1595,14 @@ long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 
 	hrtimer_init_on_stack(&t.timer, clockid, mode);
 	hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
-	if (do_nanosleep(&t, mode))
-		goto out;
+
+	if (is_replaying(scribe)) {
+		if (scribe->orig_ret == 0)
+			goto out;
+	} else {
+		if (do_nanosleep(&t, mode))
+			goto out;
+	}
 
 	/* Absolute timers do not update the rmtp value and restart: */
 	if (mode == HRTIMER_MODE_ABS) {
