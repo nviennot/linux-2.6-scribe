@@ -957,9 +957,9 @@ include/generated/utsrelease.h: include/config/kernel.release FORCE
 	$(call filechk,utsrelease.h)
 
 quiet_cmd_scribe_defines = GEN     $@
-      cmd_scribe_defines = scripts/scribe/genheaders.sh \
-			   include/linux/scribe_events.h > \
-			   include/linux/scribe_defines.h
+      cmd_scribe_defines = $(srctree)/scripts/scribe/genheaders.sh \
+			   $(srctree)/include/linux/scribe_events.h > \
+			   $(objtree)/include/linux/scribe_defines.h
 
 include/linux/scribe_defines.h: scripts/scribe/genheaders.sh \
 				include/linux/scribe_events.h
