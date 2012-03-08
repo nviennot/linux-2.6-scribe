@@ -398,6 +398,7 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 	spin_lock(&(sp)->ctx->tasks_lock);				\
 	__event = scribe_get_diverge_event(sp, _type);			\
 	if (!IS_ERR(__event)) {						\
+		dump_stack();						\
 		*__event = (struct##_type) {				\
 			.h.h.type = _type,				\
 			.h.pid = sp->queue->pid,			\

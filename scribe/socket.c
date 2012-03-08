@@ -234,20 +234,23 @@ static int scribe_sendmsg(struct kiocb *iocb, struct socket *sock,
 		return ret;
 	}
 
-	if (is_replaying(scribe) && scribe->orig_ret == 0)
-		return 0;
-
 	scribe_allow_uaccess();
+
+	if (is_replaying(scribe) && scribe->orig_ret <= 0) {
+		err = 0;
+		ret = scribe->orig_ret;
+		goto out;
+	}
+
 	err = scribe_result_flags_cond(
 		ret, sock->real_ops->sendmsg(iocb, sock, m, total_len),
-		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA,
-		!scribe_is_in_read_write(scribe) || ret > 0);
+		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA, ret > 0);
 	if (err)
 		goto out;
 	if (ret <= 0)
 		goto out;
 
-	if (is_replaying(scribe)) {
+	if (is_replaying(scribe) && !segment_eq(get_fs(), KERNEL_DS)) {
 		scribe_emul_copy_from_user_iov(scribe, m->msg_iov,
 					       m->msg_iovlen, ret);
 	}
@@ -280,22 +283,24 @@ static int scribe_recvmsg(struct kiocb *iocb, struct socket *sock,
 		return ret;
 	}
 
-	if (is_replaying(scribe) && scribe->orig_ret == 0)
-		return 0;
-
 	scribe_data_non_det();
 	scribe_allow_uaccess();
 
+	if (is_replaying(scribe) && scribe->orig_ret <= 0) {
+		err = 0;
+		ret = scribe->orig_ret;
+		goto out;
+	}
+
 	err = scribe_result_flags_cond(
 		ret, sock->real_ops->recvmsg(iocb, sock, m, total_len, flags),
-		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA,
-		!scribe_is_in_read_write(scribe) || ret > 0);
+		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA, ret > 0);
 	if (err)
 		goto out;
 	if (ret <= 0)
 		goto out;
 
-	if (is_replaying(scribe)) {
+	if (is_replaying(scribe) && !segment_eq(get_fs(), KERNEL_DS)) {
 		scribe_emul_copy_to_user_iov(scribe, m->msg_iov,
 					     m->msg_iovlen, ret);
 	}
