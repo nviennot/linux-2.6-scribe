@@ -292,6 +292,8 @@ SCRIBE_EVENT_DIVERGE(resource_type,
 
 SCRIBE_EVENT_DIVERGE(syscall,
 	__field(__u16, nr)
+	__field(__u8, num_args)
+	__field(__u32, args[6])
 )
 
 SCRIBE_EVENT_DIVERGE(syscall_ret,

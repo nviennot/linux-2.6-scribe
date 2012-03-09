@@ -140,6 +140,7 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 {
 	union scribe_syscall_event_union event;
 	int syscall_extra = should_scribe_syscall_extra(scribe);
+	int i;
 
 	/*
 	 * FIXME Do something about non deterministic errors such as
@@ -163,27 +164,19 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 	if (IS_ERR(event.generic))
 		return PTR_ERR(event.generic);
 
-	if (event.generic->type != SCRIBE_EVENT_SYSCALL_EXTRA) {
-		scribe_dequeue_event_specific(scribe,
-					      SCRIBE_EVENT_SYSCALL_EXTRA);
-		return -EDIVERGE;
-	}
+	if (event.generic->type != SCRIBE_EVENT_SYSCALL_EXTRA)
+		goto diverge;
 
-	if (event.extra->nr != scribe->syscall.nr) {
-		if (should_strict_replay(scribe)) {
-			event.extra = scribe_dequeue_event_specific(scribe,
-						      SCRIBE_EVENT_SYSCALL_EXTRA);
-			scribe_free_event(event.generic);
-			scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
-				       .nr = scribe->syscall.nr);
-			return -EDIVERGE;
-		} else {
-			scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
-					.nr = scribe->syscall.nr);
-			scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
-			scribe->orig_ret = 0;
-			return 0;
-		}
+	if (event.extra->nr != scribe->syscall.nr)
+		goto diverge;
+
+	if (event.extra->h.size !=
+	    scribe->syscall.num_args * sizeof(unsigned long))
+		goto diverge;
+
+	for (i = 0; i < scribe->syscall.num_args; i++) {
+		if (event.extra->args[i] != scribe->syscall.args[i])
+			goto diverge;
 	}
 
 	event.generic = scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
@@ -191,6 +184,32 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 	scribe_free_event(event.generic);
 
 	return 0;
+
+diverge:
+#define DIVERGE(fn)					\
+	fn(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,	\
+	   .nr = scribe->syscall.nr,			\
+	   .num_args = scribe->syscall.num_args,	\
+	   .args[0] = scribe->syscall.args[0],		\
+	   .args[1] = scribe->syscall.args[1],		\
+	   .args[2] = scribe->syscall.args[2],		\
+	   .args[3] = scribe->syscall.args[3],		\
+	   .args[4] = scribe->syscall.args[4],		\
+	   .args[5] = scribe->syscall.args[5])
+
+	if (should_strict_replay(scribe)) {
+		event.generic = scribe_dequeue_event(scribe->queue,
+						     SCRIBE_NO_WAIT);
+		scribe_free_event(event.generic);
+		DIVERGE(scribe_diverge);
+		return -EDIVERGE;
+	} else {
+		DIVERGE(scribe_mutation);
+		scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
+		scribe->orig_ret = 0;
+		return 0;
+	}
+#undef DIVERGE
 }
 
 static int __scribe_need_syscall_ret(struct scribe_ps *scribe)
