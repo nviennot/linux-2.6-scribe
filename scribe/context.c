@@ -620,6 +620,7 @@ void __scribe_detach(struct scribe_ps *scribe)
 	if (list_empty(&ctx->tasks) && !is_scribe_context_dead(ctx))
 		context_idle(ctx, NULL);
 	spin_unlock(&ctx->tasks_lock);
+	wake_up(&ctx->tasks_wait);
 
 	/*
 	 * The sighand lock guards against some races within the signal code.
