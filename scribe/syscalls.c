@@ -14,6 +14,7 @@
 #include <linux/net.h>
 #include <linux/futex.h>
 #include <asm/syscall.h>
+#include <trace/syscall.h>
 
 union scribe_syscall_event_union {
 	struct scribe_event *generic;
@@ -168,17 +169,17 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 		return -EDIVERGE;
 	}
 
-	if (event.extra->nr != scribe->nr_syscall) {
+	if (event.extra->nr != scribe->syscall.nr) {
 		if (should_strict_replay(scribe)) {
 			event.extra = scribe_dequeue_event_specific(scribe,
 						      SCRIBE_EVENT_SYSCALL_EXTRA);
 			scribe_free_event(event.generic);
 			scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
-				       .nr = scribe->nr_syscall);
+				       .nr = scribe->syscall.nr);
 			return -EDIVERGE;
 		} else {
 			scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
-					.nr = scribe->nr_syscall);
+					.nr = scribe->syscall.nr);
 			scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
 			scribe->orig_ret = 0;
 			return 0;
@@ -250,6 +251,25 @@ static int get_nr_syscall(struct pt_regs *regs)
 	return nr;
 }
 
+static int get_num_args(int nr)
+{
+	struct syscall_metadata *meta;
+	meta = syscall_nr_to_meta(nr);
+	if (!meta)
+		return 0;
+
+	return meta->nb_args;
+}
+
+static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
+{
+	scribe->syscall.nr = get_nr_syscall(regs);
+	scribe->syscall.num_args = get_num_args(scribe->syscall.nr);
+
+	syscall_get_arguments(current, regs, 0,
+			      scribe->syscall.num_args, scribe->syscall.args);
+}
+
 void scribe_enter_syscall(struct pt_regs *regs)
 {
 	struct scribe_ps *scribe = current->scribe;
@@ -258,8 +278,8 @@ void scribe_enter_syscall(struct pt_regs *regs)
 	if (!is_scribed(scribe))
 		return;
 
-	scribe->nr_syscall = get_nr_syscall(regs);
-	if (is_scribe_syscall(scribe->nr_syscall))
+	cache_syscall_info(scribe, regs);
+	if (is_scribe_syscall(scribe->syscall.nr))
 		return;
 
 	scribe_reset_fence_numbering(scribe);
@@ -288,7 +308,7 @@ void scribe_enter_syscall(struct pt_regs *regs)
 		return;
 
 	if (should_scribe_syscall_ret(scribe) ||
-	    is_interruptible_syscall(scribe->nr_syscall))
+	    is_interruptible_syscall(scribe->syscall.nr))
 		__scribe_need_syscall_ret(scribe);
 
 	if (should_scribe_syscalls(scribe) &&
@@ -304,18 +324,22 @@ static void scribe_commit_syscall_record(struct scribe_ps *scribe,
 {
 	union scribe_syscall_event_union event;
 	int syscall_extra = should_scribe_syscall_extra(scribe);
+	int i;
 
-	if (syscall_extra)
-		event.extra = scribe_alloc_event(SCRIBE_EVENT_SYSCALL_EXTRA);
-	else
+	if (syscall_extra) {
+		event.extra = scribe_alloc_event_sized(SCRIBE_EVENT_SYSCALL_EXTRA,
+			scribe->syscall.num_args * sizeof(unsigned long));
+	} else
 		event.regular = scribe_alloc_event(SCRIBE_EVENT_SYSCALL);
 
 	if (!event.generic)
 		goto err;
 
 	if (syscall_extra) {
-		event.extra->nr = scribe->nr_syscall;
 		event.extra->ret = ret_value;
+		event.extra->nr = scribe->syscall.nr;
+		for (i = 0; i < scribe->syscall.num_args; i++)
+			event.extra->args[i] = scribe->syscall.args[i];
 	} else
 		event.regular->ret = ret_value;
 
@@ -375,7 +399,7 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	if (!is_scribed(scribe))
 		return;
 
-	if (is_scribe_syscall(scribe->nr_syscall))
+	if (is_scribe_syscall(scribe->syscall.nr))
 		return;
 
 	if (scribe->commit_sys_reset_flags) {

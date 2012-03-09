@@ -9,6 +9,8 @@ menuconfig SCRIBE
 	select IPC_NS
 	select MM_OWNER
 	select DEVPTS_MULTIPLE_INSTANCES
+	select FTRACE
+	select FTRACE_SYSCALLS
 	default y
 
 if SCRIBE

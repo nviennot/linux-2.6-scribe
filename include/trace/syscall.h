@@ -46,6 +46,7 @@ enum print_line_t print_syscall_enter(struct trace_iterator *iter, int flags,
 				      struct trace_event *event);
 enum print_line_t print_syscall_exit(struct trace_iterator *iter, int flags,
 				     struct trace_event *event);
+extern struct syscall_metadata *syscall_nr_to_meta(int nr);
 #endif
 
 #ifdef CONFIG_PERF_EVENTS

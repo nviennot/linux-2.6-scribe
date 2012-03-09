@@ -508,7 +508,11 @@ struct scribe_ps {
 	scribe_insert_point_t syscall_ip;
 	int in_syscall;
 	unsigned long commit_sys_reset_flags;
-	int nr_syscall;
+	struct {
+		int nr;
+		int num_args;
+		unsigned long args[6];
+	} syscall;
 	bool need_syscall_ret;
 	long orig_ret;
 
