@@ -136,6 +136,11 @@ static int scribe_need_syscall_ret_record(struct scribe_ps *scribe)
 	return 0;
 }
 
+static bool looks_like_address(unsigned long value)
+{
+	return !!(value & 0xff700000);
+}
+
 static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 {
 	union scribe_syscall_event_union event;
@@ -175,8 +180,14 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 		goto diverge;
 
 	for (i = 0; i < scribe->syscall.num_args; i++) {
-		if (event.extra->args[i] != scribe->syscall.args[i])
-			goto diverge;
+		if (event.extra->args[i] == scribe->syscall.args[i])
+			continue;
+
+		if (looks_like_address(event.extra->args[i]) &&
+		    looks_like_address(scribe->syscall.args[i]))
+			continue;
+
+		goto diverge;
 	}
 
 	event.generic = scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
