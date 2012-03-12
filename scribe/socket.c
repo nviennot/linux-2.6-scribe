@@ -236,15 +236,9 @@ static int scribe_sendmsg(struct kiocb *iocb, struct socket *sock,
 
 	scribe_allow_uaccess();
 
-	if (is_replaying(scribe) && scribe->orig_ret <= 0) {
-		err = 0;
-		ret = scribe->orig_ret;
-		goto out;
-	}
-
-	err = scribe_result_flags_cond(
+	err = scribe_result_flags(
 		ret, sock->real_ops->sendmsg(iocb, sock, m, total_len),
-		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA, ret > 0);
+		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA);
 	if (err)
 		goto out;
 	if (ret <= 0)
@@ -286,15 +280,9 @@ static int scribe_recvmsg(struct kiocb *iocb, struct socket *sock,
 	scribe_data_non_det();
 	scribe_allow_uaccess();
 
-	if (is_replaying(scribe) && scribe->orig_ret <= 0) {
-		err = 0;
-		ret = scribe->orig_ret;
-		goto out;
-	}
-
-	err = scribe_result_flags_cond(
+	err = scribe_result_flags(
 		ret, sock->real_ops->recvmsg(iocb, sock, m, total_len, flags),
-		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA, ret > 0);
+		SCRIBE_PS_ENABLE_MM | SCRIBE_PS_ENABLE_DATA);
 	if (err)
 		goto out;
 	if (ret <= 0)
