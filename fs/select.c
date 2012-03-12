@@ -722,7 +722,7 @@ int core_sys_select(int n, fd_set __user *inp, fd_set __user *outp,
 	if (scribe_need_syscall_ret(scribe))
 		return -ENOMEM;
 
-	if (is_replaying(scribe))
+	if (is_replaying(scribe) && should_scribe_resources(scribe))
 		ret = do_select_replay(n, &fds);
 	else
 		ret = do_select(n, &fds, end_time);
