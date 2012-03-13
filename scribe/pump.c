@@ -401,14 +401,20 @@ static ssize_t deserialize_events(struct scribe_context *ctx, const char *buf,
 			scribe_free_event(event);
 			if (err)
 				goto out;
-		} else if (event->type == SCRIBE_EVENT_QUEUE_EOF) {
-			scribe_seal_queue(*current_queue);
-			scribe_free_event(event);
-		} else { /* generic event handling */
-			if (unlikely((*current_queue)->stream.sealed))
+		} else {
+			if (unlikely(!*current_queue)) {
+				err = -EINVAL;
+				goto out;
+			}
+			if (event->type == SCRIBE_EVENT_QUEUE_EOF) {
+				scribe_seal_queue(*current_queue);
 				scribe_free_event(event);
-			else
-				scribe_queue_event(*current_queue, event);
+			} else { /* generic event handling */
+				if (unlikely((*current_queue)->stream.sealed))
+					scribe_free_event(event);
+				else
+					scribe_queue_event(*current_queue, event);
+			}
 		}
 
 		event = NULL;
