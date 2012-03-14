@@ -157,12 +157,6 @@ int scribe_resource_prepare(void)
 	return __resource_prepare(scribe);
 }
 
-void scribe_assert_no_locked_region(struct scribe_res_user *user)
-{
-	WARN(!list_empty(&user->locked_regions),
-	     "Some regions are left unlocked\n");
-}
-
 void scribe_resource_exit_user(struct scribe_res_user *user)
 {
 	struct scribe_mapped_res *mres;

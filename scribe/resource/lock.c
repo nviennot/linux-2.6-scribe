@@ -518,6 +518,26 @@ static void do_unlock_discard(struct scribe_ps *scribe,
 	}
 }
 
+void scribe_assert_no_locked_region(struct scribe_res_user *user)
+{
+	struct scribe_lock_region *lock_region;
+	struct scribe_resource *res;
+	char desc[256];
+
+	if (list_empty(&user->locked_regions))
+		return;
+
+	printk("Some regions are left locked:\n");
+
+	list_for_each_entry(lock_region, &user->locked_regions, user_node) {
+		res = lock_region->res;
+		get_description(res, desc, sizeof(desc));
+		printk("  Resource id=%d, serial=%d, desc=%s\n",
+		       res->id, atomic_read(&res->serial), desc);
+	}
+
+	WARN_ON(1);
+}
 
 struct scribe_lock_region *scribe_find_lock_region(struct scribe_res_user *user,
 						   void *object)
