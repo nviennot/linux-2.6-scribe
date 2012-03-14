@@ -27,11 +27,12 @@ bool is_scribe_resource_key(struct lock_class_key *key)
 #define set_lock_class(lock, type) do { } while (0)
 #endif
 
-void scribe_init_resource(struct scribe_resource *res, int type)
+void scribe_init_resource(struct scribe_resource *res, void *object, int type)
 {
 	res->ctx = NULL;
 	res->id = -1; /* The id will be set once the resource is tracked */
 	res->type = type;
+	res->object = object;
 
 	res->first_read_serial = -1;
 	atomic_set(&res->serial, 0);
@@ -118,11 +119,12 @@ static void release_res_inode(struct scribe_resource *res, bool *lock_dropped)
 	iput(inode);
 }
 
-static size_t get_file_lock_description(struct scribe_ps *scribe,
-					char *buffer, size_t size,
-					struct scribe_lock_region *lock_region)
+static size_t get_file_description(struct scribe_resource *res,
+				   char *buffer, size_t size)
+
 {
-	struct file *file = lock_region->object;
+	struct scribe_ps *scribe = current->scribe;
+	struct file *file = res->object;
 	char *tmp, *pathname;
 	ssize_t ret;
 
@@ -132,9 +134,11 @@ static size_t get_file_lock_description(struct scribe_ps *scribe,
 				"memory allocation failed");
 	}
 
-	scribe->do_dpath_scribing = false;
+	if (scribe)
+		scribe->do_dpath_scribing = false;
 	pathname = d_path(&file->f_path, tmp, PAGE_SIZE);
-	scribe->do_dpath_scribing = true;
+	if (scribe)
+		scribe->do_dpath_scribing = true;
 	if (IS_ERR(pathname)) {
 		ret = snprintf(buffer, size, "d_path failed with %ld",
 			       PTR_ERR(pathname));
@@ -146,11 +150,10 @@ static size_t get_file_lock_description(struct scribe_ps *scribe,
 	return ret;
 }
 
-static size_t get_ppid_lock_description(struct scribe_ps *scribe,
-					char *buffer, size_t size,
-					struct scribe_lock_region *lock_region)
+static size_t get_ppid_description(struct scribe_resource *res,
+				   char *buffer, size_t size)
 {
-	struct task_struct *p = lock_region->object;
+	struct task_struct *p = res->object;
 	return snprintf(buffer, size, "%d", task_pid_vnr(p));
 }
 
@@ -166,8 +169,8 @@ struct resource_ops_struct scribe_resource_ops[SCRIBE_RES_NUM_TYPES] =
 					 .release = release_res_inode)
 	LK(SCRIBE_RES_TYPE_FILE,	 .track_users = true,
 					 .release = release_mres,
-					 .get_lock_description =
-					            get_file_lock_description)
+					 .get_description =
+					            get_file_description)
 	LK(SCRIBE_RES_TYPE_FILES_STRUCT, .use_spinlock = true)
 	LK(SCRIBE_RES_TYPE_PID,		 .release = release_mres)
 	LK(SCRIBE_RES_TYPE_FUTEX,	 .use_spinlock = true,
@@ -175,8 +178,8 @@ struct resource_ops_struct scribe_resource_ops[SCRIBE_RES_NUM_TYPES] =
 	LK(SCRIBE_RES_TYPE_IPC)
 	LK(SCRIBE_RES_TYPE_MMAP)
 	LK(SCRIBE_RES_TYPE_PPID,	 .use_spinlock = true,
-					 .get_lock_description =
-					            get_ppid_lock_description)
+					 .get_description =
+					            get_ppid_description)
 	LK(SCRIBE_RES_TYPE_SUNADDR,	 .use_spinlock = true,
 					 .release = release_mres)
 };
@@ -193,13 +196,11 @@ struct scribe_res_context *scribe_alloc_res_context(void)
 	res_ctx->next_id = 0;
 	INIT_LIST_HEAD(&res_ctx->tracked);
 
-	res_ctx->pid_map = scribe_alloc_res_map(&scribe_pid_map_ops,
-						PID_RES_HASH_BITS);
+	res_ctx->pid_map = scribe_alloc_res_map(&scribe_pid_map_ops);
 	if (!res_ctx->pid_map)
 		goto err_resources;
 
-	res_ctx->sunaddr_map = scribe_alloc_res_map(&scribe_sunaddr_map_ops,
-						    SUNADDR_RES_HASH_BITS);
+	res_ctx->sunaddr_map = scribe_alloc_res_map(&scribe_sunaddr_map_ops);
 	if (!res_ctx->sunaddr_map)
 		goto err_pid_map;
 

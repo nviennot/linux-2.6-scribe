@@ -916,8 +916,8 @@ static inline void __scribe_lock_hb(struct futex_hash_bucket *hb,
 	if (!scribe)
 		return;
 
-	scribe_lock_object_key(hb, &hb->scribe_resource, scribe->ctx,
-			       SCRIBE_RES_TYPE_FUTEX, SCRIBE_WRITE | flags);
+	scribe_lock_object_key(&hb->scribe_resource, scribe->ctx,
+			       SCRIBE_WRITE | flags);
 }
 
 static inline void scribe_lock_hb(struct futex_hash_bucket *hb)
@@ -2830,6 +2830,18 @@ SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
 	return do_futex(uaddr, op, val, tp, uaddr2, val2, val3);
 }
 
+static void *scribe_map_to_hb(struct scribe_res_map *map, void *key)
+{
+	return container_of(map, struct futex_hash_bucket, scribe_resource);
+}
+
+static struct scribe_res_map_ops scribe_futex_map_ops = {
+	.type =  SCRIBE_RES_TYPE_FUTEX,
+	.alloc_mres = scribe_alloc_mres,
+	.free_mres = scribe_free_mres,
+	.get_object = scribe_map_to_hb,
+};
+
 static int __init futex_init(void)
 {
 	u32 curval;
@@ -2853,7 +2865,7 @@ static int __init futex_init(void)
 		plist_head_init(&futex_queues[i].chain, &futex_queues[i].lock);
 		spin_lock_init(&futex_queues[i].lock);
 		scribe_init_res_map(&futex_queues[i].scribe_resource,
-				    &scribe_context_map_ops);
+				    &scribe_futex_map_ops);
 	}
 
 	return 0;

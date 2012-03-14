@@ -17,7 +17,7 @@
 #include <linux/ipc_namespace.h>
 
 
-void scribe_lock_object(void *object, struct scribe_resource *res, int flags)
+void scribe_lock_object(struct scribe_resource *res, int flags)
 {
 	struct scribe_ps *scribe = current->scribe;
 	struct scribe_lock_arg arg;
@@ -25,11 +25,11 @@ void scribe_lock_object(void *object, struct scribe_resource *res, int flags)
 	if (!should_handle_resources(scribe))
 		return;
 
-	__scribe_lock_object(scribe, __lock_arg(&arg, object, res, flags));
+	__scribe_lock_object(scribe, __lock_arg(&arg, res, flags));
 }
 
-void scribe_lock_object_key(void *object, struct scribe_res_map *map,
-			    void *key, int res_type, int flags)
+void scribe_lock_object_key(struct scribe_res_map *map,
+			    void *key, int flags)
 {
 	struct scribe_ps *scribe = current->scribe;
 	struct scribe_lock_arg arg;
@@ -38,7 +38,7 @@ void scribe_lock_object_key(void *object, struct scribe_res_map *map,
 		return;
 
 	__scribe_lock_object(scribe, __lock_arg_keyed(scribe, &arg,
-					object, map, key, res_type, flags));
+					map, key, flags));
 }
 
 static inline struct inode *file_inode(struct file *file)
@@ -129,8 +129,8 @@ static inline struct scribe_lock_arg *__lock_arg_inode(
 	if (inode->i_sb->s_magic == PROC_SUPER_MAGIC)
 		flags |= SCRIBE_NO_LOCK;
 
-	return __lock_arg_keyed(scribe, arg, inode, &inode->i_scribe_resource,
-				scribe->ctx, SCRIBE_RES_TYPE_INODE, flags);
+	return __lock_arg_keyed(scribe, arg, &inode->i_scribe_resource,
+				scribe->ctx, flags);
 }
 
 static int lock_file(struct file *file, int flags)
@@ -151,8 +151,8 @@ static int lock_file(struct file *file, int flags)
 	    !(flags & SCRIBE_INODE_EXPLICIT))
 		flags &= ~(SCRIBE_INODE_READ | SCRIBE_INODE_WRITE);
 
-	__lock_arg_keyed(scribe, file_arg, file, &file->scribe_resource,
-			 scribe->ctx, SCRIBE_RES_TYPE_FILE, flags);
+	__lock_arg_keyed(scribe, file_arg, &file->scribe_resource,
+			 scribe->ctx, flags);
 
 	if (flags & (SCRIBE_INODE_READ | SCRIBE_INODE_WRITE)) {
 		flags = flags & SCRIBE_INODE_READ ? SCRIBE_READ : SCRIBE_WRITE;
@@ -399,7 +399,7 @@ static void lock_files(struct files_struct *files, int flags)
 		return;
 
 	__scribe_lock_object(scribe, __lock_arg(
-			&arg, files, &files->scribe_resource, flags));
+			&arg, &files->scribe_resource, flags));
 }
 
 void scribe_lock_files_read(struct files_struct *files)
@@ -421,8 +421,7 @@ static void lock_pid(pid_t pid, int flags)
 		return;
 
 	__scribe_lock_object(scribe, __lock_arg_keyed(scribe, &arg,
-			(void *)pid, scribe->ctx->res_ctx->pid_map,
-			(void *)pid, SCRIBE_RES_TYPE_PID, flags));
+			scribe->ctx->res_ctx->pid_map, (void *)pid, flags));
 }
 
 void scribe_lock_pid_read(pid_t pid)
@@ -455,7 +454,7 @@ void scribe_lock_ipc(struct ipc_namespace *ns)
 
 	/* For now all IPC things are synchronized on the same resource */
 	__scribe_lock_object(scribe, __lock_arg(
-			&arg, ns, &ns->scribe_resource, SCRIBE_WRITE));
+			&arg, &ns->scribe_resource, SCRIBE_WRITE));
 }
 
 static void lock_mmap(struct mm_struct *mm, unsigned long flags)
@@ -467,7 +466,7 @@ static void lock_mmap(struct mm_struct *mm, unsigned long flags)
 		return;
 
 	__scribe_lock_object(scribe, __lock_arg(
-			&arg, mm, &mm->scribe_mmap_res, flags));
+			&arg, &mm->scribe_mmap_res, flags));
 }
 
 void scribe_lock_mmap_read(struct mm_struct *mm)
@@ -489,7 +488,7 @@ static void lock_ppid_ptr(struct task_struct *p, unsigned long flags)
 		return;
 
 	__scribe_lock_object(scribe, __lock_arg(
-			&arg, p, &p->scribe_ppid_ptr_res, flags));
+			&arg, &p->scribe_ppid_ptr_res, flags));
 }
 
 void scribe_lock_ppid_ptr_read(struct task_struct *p)
@@ -503,7 +502,7 @@ void scribe_lock_ppid_ptr_write(struct task_struct *p)
 }
 
 static void lock_sunaddr(struct sockaddr_un *sunaddr, int addr_len,
-			 unsigned long flags)
+			 lock_cookie_t *lock_cookie, unsigned long flags)
 {
 	struct scribe_ps *scribe = current->scribe;
 	struct scribe_lock_arg arg;
@@ -516,16 +515,19 @@ static void lock_sunaddr(struct sockaddr_un *sunaddr, int addr_len,
 	memcpy(&internal_sunaddr.addr, sunaddr, addr_len);
 
 	__scribe_lock_object(scribe, __lock_arg_keyed(scribe, &arg,
-			sunaddr, scribe->ctx->res_ctx->sunaddr_map,
-			&internal_sunaddr, SCRIBE_RES_TYPE_SUNADDR, flags));
+			scribe->ctx->res_ctx->sunaddr_map,
+			&internal_sunaddr, flags));
+	*lock_cookie = arg.res->object;
 }
 
-void scribe_lock_sunaddr_read(struct sockaddr_un *sunaddr, int addr_len)
+void scribe_lock_sunaddr_read(struct sockaddr_un *sunaddr, int addr_len,
+			      lock_cookie_t *lock_cookie)
 {
-	lock_sunaddr(sunaddr, addr_len, SCRIBE_READ);
+	lock_sunaddr(sunaddr, addr_len, lock_cookie, SCRIBE_READ);
 }
 
-void scribe_lock_sunaddr_write(struct sockaddr_un *sunaddr, int addr_len)
+void scribe_lock_sunaddr_write(struct sockaddr_un *sunaddr, int addr_len,
+			       lock_cookie_t *lock_cookie)
 {
-	lock_sunaddr(sunaddr, addr_len, SCRIBE_WRITE);
+	lock_sunaddr(sunaddr, addr_len, lock_cookie, SCRIBE_WRITE);
 }

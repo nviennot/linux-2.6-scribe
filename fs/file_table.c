@@ -91,6 +91,19 @@ int proc_nr_files(ctl_table *table, int write,
 }
 #endif
 
+static void *scribe_map_to_file(struct scribe_res_map *map, void *key)
+{
+	return container_of(map, struct file, scribe_resource);
+}
+
+static struct scribe_res_map_ops scribe_file_map_ops = {
+	.type =  SCRIBE_RES_TYPE_FILE,
+	.alloc_mres = scribe_alloc_mres,
+	.free_mres = scribe_free_mres,
+	.get_object = scribe_map_to_file,
+};
+
+
 /* Find an unused file structure and return a pointer to it.
  * Returns NULL, if there are no more free file structures or
  * we run out of memory.
@@ -134,8 +147,7 @@ struct file *get_empty_filp(void)
 	spin_lock_init(&f->f_lock);
 	eventpoll_init_file(f);
 #ifdef CONFIG_SCRIBE
-	scribe_init_res_map(&f->scribe_resource,
-			    &scribe_context_map_ops);
+	scribe_init_res_map(&f->scribe_resource, &scribe_file_map_ops);
 #endif
 	/* f->f_version: 0 */
 	return f;

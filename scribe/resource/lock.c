@@ -186,20 +186,6 @@ static void do_interrupt_users(struct scribe_resource *res)
 	spin_unlock(&res->lock_regions_lock);
 }
 
-static size_t get_lock_description(struct scribe_ps *scribe,
-				   char *buffer, size_t size,
-				   struct scribe_lock_region *lock_region)
-{
-	int res_type = lock_region->res->type;
-
-	if (scribe_resource_ops[res_type].get_lock_description) {
-		return scribe_resource_ops[res_type].get_lock_description(
-				scribe, buffer, size, lock_region);
-	}
-
-	return snprintf(buffer, size, "none");
-}
-
 static int do_lock_record(struct scribe_ps *scribe,
 			  struct scribe_lock_region *lock_region,
 			  struct scribe_resource *res)
@@ -222,8 +208,7 @@ static int do_lock_record(struct scribe_ps *scribe,
 		 */
 
 		lock_event = lock_region->lock_event.extra;
-		size = get_lock_description(scribe, lock_event->desc,
-					    RES_DESC_MAX, lock_region);
+		size = get_description(res, lock_event->desc, RES_DESC_MAX);
 		lock_event->h.size = size;
 	}
 
@@ -538,9 +523,11 @@ struct scribe_lock_region *scribe_find_lock_region(struct scribe_res_user *user,
 						   void *object)
 {
 	struct scribe_lock_region *lock_region;
+	struct scribe_resource *res;
 
 	list_for_each_entry(lock_region, &user->locked_regions, user_node) {
-		if (lock_region->object == object)
+		res = lock_region->res;
+		if (res && res->object == object)
 			return lock_region;
 	}
 
@@ -563,7 +550,6 @@ int __lock_object(struct scribe_ps *scribe, struct scribe_lock_arg *arg,
 
 	lock_region = scribe_get_pre_alloc_lock_region(user);
 	lock_region->res = arg->res;
-	lock_region->object = arg->object;
 	lock_region->nested_object = nested_object;
 	lock_region->flags = arg->flags;
 
@@ -603,7 +589,7 @@ int __scribe_lock_objects(struct scribe_ps *scribe,
 	for (i = 0; i < count; i++) {
 		nested_object = NULL;
 		if (i != count-1)
-			nested_object = args[i+1].object;
+			nested_object = args[i+1].res->object;
 		/* The recursion level is around 2/3, so we are good */
 		ret = __lock_object(scribe, &args[i], nested_object);
 		if (ret)
@@ -615,7 +601,7 @@ int __scribe_lock_objects(struct scribe_ps *scribe,
 undo:
 	for (i--; i >= 0; i--) {
 		user = &scribe->resources;
-		lock_region = scribe_find_lock_region(user, args[i].object);
+		lock_region = scribe_find_lock_region(user, args[i].res->object);
 		list_del(&lock_region->user_node);
 		untrack_user(lock_region);
 		do_unlock_discard(scribe, lock_region);

@@ -115,6 +115,19 @@ static void wake_up_inode(struct inode *inode)
 	wake_up_bit(&inode->i_state, __I_NEW);
 }
 
+static void *scribe_map_to_inode(struct scribe_res_map *map, void *key)
+{
+	return container_of(map, struct inode, i_scribe_resource);
+}
+
+static struct scribe_res_map_ops scribe_inode_map_ops = {
+	.type =  SCRIBE_RES_TYPE_INODE,
+	.alloc_mres = scribe_alloc_mres,
+	.free_mres = scribe_free_mres,
+	.get_object = scribe_map_to_inode,
+};
+
+
 /**
  * inode_init_always - perform inode structure intialisation
  * @sb: superblock inode belongs to
@@ -194,8 +207,7 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 #endif
 
 #ifdef CONFIG_SCRIBE
-	scribe_init_res_map(&inode->i_scribe_resource,
-			    &scribe_context_map_ops);
+	scribe_init_res_map(&inode->i_scribe_resource, &scribe_inode_map_ops);
 #endif
 
 	return 0;

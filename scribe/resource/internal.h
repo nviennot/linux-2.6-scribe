@@ -15,23 +15,15 @@
 
 /* Initializer for a resource mapper with a hash table */
 extern struct scribe_res_map *scribe_alloc_res_map(
-				struct scribe_res_map_ops *ops, int hash_bits);
+						struct scribe_res_map_ops *ops);
 extern void scribe_free_res_map(struct scribe_res_map *map);
 
 /* And its accessors */
 extern struct scribe_mapped_res *scribe_get_mapped_res(
 		struct scribe_res_map *map, void *key,
-		int resource_type, void *alloc_arg);
+		struct scribe_res_user *user);
+
 extern void scribe_remove_mapped_res(struct scribe_mapped_res *mres);
-
-struct scribe_res_map_ops {
-	/* alloc_mres is responsible for setting the mr_key value */
-	struct scribe_mapped_res * (*alloc_mres) (void *key, void *alloc_arg);
-	void (*free_mres) (struct scribe_mapped_res *mres);
-
-	unsigned long (*hash_fn) (struct scribe_res_map *map, void *key);
-	bool (*cmp_keys) (void *key1, void *key2);
-};
 
 struct scribe_mapped_res {
 	union {
@@ -75,7 +67,6 @@ extern struct sunaddr *scribe_get_pre_alloc_sunaddr(
 						struct scribe_res_user *user);
 extern struct scribe_lock_region *scribe_get_pre_alloc_lock_region(
 						struct scribe_res_user *user);
-extern void scribe_free_mres(struct scribe_mapped_res *mres);
 
 /*
  * scribe_res_context is the container per scribe context where all resources
@@ -105,8 +96,7 @@ struct resource_ops_struct {
 			 bool *);
 	void (*release) (struct scribe_resource *, bool *);
 
-	size_t (*get_lock_description)(struct scribe_ps *, char *, size_t,
-				       struct scribe_lock_region *);
+	size_t (*get_description)(struct scribe_resource *, char *, size_t);
 
 #ifdef CONFIG_LOCKDEP
 	struct lock_class_key key;
@@ -122,6 +112,19 @@ static inline int use_spinlock(struct scribe_resource *res)
 {
 	return scribe_resource_ops[res->type].use_spinlock;
 }
+
+static inline size_t get_description(struct scribe_resource *res,
+				     char *buffer, size_t size)
+{
+	struct resource_ops_struct *ops = &scribe_resource_ops[res->type];
+
+	if (ops->get_description)
+		return ops->get_description(res, buffer, size);
+	return snprintf(buffer, size, "none");
+}
+
+extern struct scribe_res_map_ops scribe_pid_map_ops;
+extern struct scribe_res_map_ops scribe_sunaddr_map_ops;
 
 static inline int should_handle_resources(struct scribe_ps *scribe)
 {
@@ -143,7 +146,6 @@ struct scribe_lock_region {
 		struct scribe_event_resource_lock_extra *extra;
 	} lock_event;
 	struct scribe_event_resource_unlock *unlock_event;
-	void *object;
 	void *nested_object; /* Used with __lock_objects() */
 	struct scribe_resource *res;
 	int flags;
@@ -153,16 +155,14 @@ extern struct scribe_lock_region *scribe_find_lock_region(
 				struct scribe_res_user *user, void *object);
 
 struct scribe_lock_arg {
-	void *object;
 	struct scribe_resource *res;
 	int flags;
 };
 
 static inline struct scribe_lock_arg *__lock_arg(
-		struct scribe_lock_arg *arg, void *object,
+		struct scribe_lock_arg *arg,
 		struct scribe_resource *res, int flags)
 {
-	arg->object = object;
 	arg->res = res;
 	arg->flags = flags;
 	return arg;
@@ -170,15 +170,14 @@ static inline struct scribe_lock_arg *__lock_arg(
 
 static inline struct scribe_lock_arg *__lock_arg_keyed(
 		struct scribe_ps *scribe,
-		struct scribe_lock_arg *arg, void *object,
+		struct scribe_lock_arg *arg,
 		struct scribe_res_map *map, void *key,
-		int res_type, int flags)
+		int flags)
 {
 	struct scribe_mapped_res *mres;
 
-	mres = scribe_get_mapped_res(map, key, res_type, &scribe->resources);
+	mres = scribe_get_mapped_res(map, key, &scribe->resources);
 
-	arg->object = object;
 	arg->res = &mres->mr_res;
 	arg->flags = flags;
 

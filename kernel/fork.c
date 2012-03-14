@@ -291,7 +291,8 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	tsk->splice_pipe = NULL;
 #ifdef CONFIG_SCRIBE
 	tsk->scribe = NULL;
-	scribe_init_resource(&tsk->scribe_ppid_ptr_res, SCRIBE_RES_TYPE_PPID);
+	scribe_init_resource(&tsk->scribe_ppid_ptr_res, tsk,
+			     SCRIBE_RES_TYPE_PPID);
 #endif
 
 	account_kernel_stack(ti, 1);
@@ -484,7 +485,7 @@ static void mm_init_scribe(struct mm_struct *mm)
 	mm->scribe_cnt = 0;
 	init_waitqueue_head(&mm->scribe_wait);
 
-	scribe_init_resource(&mm->scribe_mmap_res, SCRIBE_RES_TYPE_MMAP);
+	scribe_init_resource(&mm->scribe_mmap_res, mm, SCRIBE_RES_TYPE_MMAP);
 #endif
 }
 

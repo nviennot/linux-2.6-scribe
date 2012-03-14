@@ -374,11 +374,10 @@ static void unix_sock_destructor(struct sock *sk)
 #endif
 }
 
-typedef void *lock_cookie_t;
 static void __scribe_lock_sock_addr(struct unix_sock *u,
 				    lock_cookie_t *lock_cookie,
-			    void (*inode_lock_fn)(struct inode *),
-			    void (*sunaddr_lock_fn)(struct sockaddr_un *, int))
+	    void (*inode_lock_fn)(struct inode *),
+	    void (*sunaddr_lock_fn)(struct sockaddr_un *, int, lock_cookie_t *))
 {
 	if (!u->addr) {
 		*lock_cookie = NULL;
@@ -388,10 +387,8 @@ static void __scribe_lock_sock_addr(struct unix_sock *u,
 	if (u->addr->name->sun_path[0]) {
 		*lock_cookie = u->dentry->d_inode;
 		inode_lock_fn(u->dentry->d_inode);
-	} else {
-		*lock_cookie = u->addr->name;
-		sunaddr_lock_fn(u->addr->name, u->addr->len);
-	}
+	} else
+		sunaddr_lock_fn(u->addr->name, u->addr->len, lock_cookie);
 }
 
 static inline void scribe_lock_sock_addr_read(struct unix_sock *u,
@@ -814,6 +811,7 @@ static struct sock *unix_find_other(struct net *net,
 				    struct sockaddr_un *sunname, int len,
 				    int type, unsigned hash, int *error)
 {
+	lock_cookie_t lock_cookie;
 	struct sock *u;
 	struct path path;
 	int err = 0;
@@ -854,9 +852,9 @@ static struct sock *unix_find_other(struct net *net,
 		}
 	} else {
 		err = -ECONNREFUSED;
-		scribe_lock_sunaddr_read(sunname, len);
+		scribe_lock_sunaddr_read(sunname, len, &lock_cookie);
 		u = unix_find_socket_byname(net, sunname, len, type, hash);
-		scribe_unlock(sunname);
+		scribe_unlock(lock_cookie);
 		if (u) {
 			struct dentry *dentry;
 			dentry = unix_sk(u)->dentry;
@@ -888,6 +886,7 @@ static int unix_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	struct unix_address *addr;
 	struct hlist_head *list;
 	struct inode *locked_inode = NULL;
+	lock_cookie_t lock_cookie;
 
 	err = -EINVAL;
 	if (sunaddr->sun_family != AF_UNIX)
@@ -967,7 +966,7 @@ out_mknod_drop_write:
 		u->dentry = nd.path.dentry;
 		u->mnt    = nd.path.mnt;
 	} else {
-		scribe_lock_sunaddr_write(sunaddr, addr_len);
+		scribe_lock_sunaddr_write(sunaddr, addr_len, &lock_cookie);
 		spin_lock(&unix_table_lock);
 
 		err = -EADDRINUSE;
@@ -990,7 +989,7 @@ out_unlock:
 	if (locked_inode)
 		scribe_unlock(locked_inode);
 	if (!sunaddr->sun_path[0])
-		scribe_unlock(sunaddr);
+		scribe_unlock(lock_cookie);
 out_up:
 	mutex_unlock(&u->readlock);
 out:

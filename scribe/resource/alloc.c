@@ -18,6 +18,17 @@ void __init scribe_res_init_caches(void)
 				SLAB_HWCACHE_ALIGN | SLAB_PANIC);
 }
 
+struct scribe_mapped_res *scribe_alloc_mres(
+					void *key, struct scribe_res_user *user)
+{
+	struct scribe_mapped_res *mres;
+
+	mres = scribe_get_pre_alloc_mres(user);
+	mres->mr_key = key;
+
+	return mres;
+}
+
 void scribe_free_mres(struct scribe_mapped_res *mres)
 {
 	kmem_cache_free(mres_cache, mres);

@@ -44,7 +44,7 @@ static struct ipc_namespace *create_ipc_ns(void)
 	ipcns_notify(IPCNS_CREATED);
 	register_ipcns_notifier(ns);
 
-	scribe_init_resource(&ns->scribe_resource, SCRIBE_RES_TYPE_IPC);
+	scribe_init_resource(&ns->scribe_resource, ns, SCRIBE_RES_TYPE_IPC);
 
 	return ns;
 }

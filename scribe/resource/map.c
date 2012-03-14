@@ -28,11 +28,10 @@ void scribe_exit_res_map(struct scribe_res_map *map)
 	WARN_ON(!hlist_empty(&map->head[0]));
 }
 
-struct scribe_res_map *scribe_alloc_res_map(struct scribe_res_map_ops *ops,
-					    int hash_bits)
+struct scribe_res_map *scribe_alloc_res_map(struct scribe_res_map_ops *ops)
 {
 	struct scribe_res_map *map;
-	int hash_size = 1 << hash_bits;
+	int hash_size = 1 << ops->hash_bits;
 	int i;
 
 	/* we use hash_size - 1 because the struct already has one */
@@ -81,8 +80,7 @@ static struct scribe_mapped_res *__find_mapped_res(
  * resource into the tracked resources (and thus allowing it to be removed)
  */
 struct scribe_mapped_res *scribe_get_mapped_res(struct scribe_res_map *map,
-						void *key, int resource_type,
-						void *alloc_arg)
+					void *key, struct scribe_res_user *user)
 {
 	struct scribe_res_map_ops *ops = map->ops;
 	struct scribe_mapped_res *mres;
@@ -107,10 +105,11 @@ struct scribe_mapped_res *scribe_get_mapped_res(struct scribe_res_map *map,
 		return mres;
 	}
 
-	mres = ops->alloc_mres(key, alloc_arg);
+	mres = ops->alloc_mres(key, user);
 	mres->mr_map = map;
 
-	scribe_init_resource(&mres->mr_res, resource_type);
+	scribe_init_resource(&mres->mr_res,
+			     ops->get_object(map, key), ops->type);
 
 	hlist_add_head_rcu(&mres->mr_node, head);
 	spin_unlock_bh(&map->lock);
@@ -141,46 +140,38 @@ void scribe_remove_mapped_res(struct scribe_mapped_res *mres)
  * The following is the map operation definitions we'll use.
  */
 
-static struct scribe_mapped_res *alloc_mres(void *key, void *alloc_arg)
+static void *key_object(struct scribe_res_map *map, void *key)
 {
-	struct scribe_res_user *user = alloc_arg;
-	struct scribe_mapped_res *mres;
-
-	mres = scribe_get_pre_alloc_mres(user);
-	mres->mr_key = key;
-
-	return mres;
+	return key;
 }
 
-struct scribe_res_map_ops scribe_context_map_ops = {
-	.alloc_mres = alloc_mres,
-	.free_mres = scribe_free_mres,
-};
-
 /*
- * On demand mapping @id -> @resource. The resources are persistent.
- * The @id is different from the resource id:
+ * On demand mapping @pid -> @resource. The resources are persistent.
+ * The @pid is different from the resource id:
  * e.g. we want to map a pid to a resource, but that resource may have a
  * totally different id.
  */
 
 static unsigned long hash_fn_pid(struct scribe_res_map *map, void *key)
 {
-	return hash_long((int)key, SCRIBE_RES_TYPE_PID);
+	return hash_long((int)key, PID_RES_HASH_BITS);
 }
 
 struct scribe_res_map_ops scribe_pid_map_ops = {
-	.alloc_mres = alloc_mres,
+	.type =  SCRIBE_RES_TYPE_PID,
+	.alloc_mres = scribe_alloc_mres,
 	.free_mres = scribe_free_mres,
+	.get_object = key_object,
+	.hash_bits = PID_RES_HASH_BITS,
 	.hash_fn = hash_fn_pid,
 };
 
 
 /* Mapping of unix abstract path to res */
-static struct scribe_mapped_res *alloc_mres_sunaddr(void *key, void *alloc_arg)
+static struct scribe_mapped_res *alloc_mres_sunaddr(
+					void *key, struct scribe_res_user *user)
 {
-	struct scribe_mapped_res *mres = alloc_mres(key, alloc_arg);
-	struct scribe_res_user *user = alloc_arg;
+	struct scribe_mapped_res *mres = scribe_alloc_mres(key, user);
 	struct sunaddr *sun = key, *new_sun;
 
 	new_sun = scribe_get_pre_alloc_sunaddr(user);
@@ -215,8 +206,11 @@ static bool cmp_keys_sunaddr(void *key1, void *key2)
 }
 
 struct scribe_res_map_ops scribe_sunaddr_map_ops = {
+	.type = SCRIBE_RES_TYPE_SUNADDR,
 	.alloc_mres = alloc_mres_sunaddr,
 	.free_mres = free_mres_sunaddr,
+	.get_object = key_object,
+	.hash_bits = SUNADDR_RES_HASH_BITS,
 	.hash_fn = hash_fn_sunaddr,
 	.cmp_keys = cmp_keys_sunaddr,
 };

@@ -35,6 +35,7 @@ struct scribe_resource {
 
 	int id;
 	int type;
+	void *object;
 
 	/* The write part is on a different cache line */
 
@@ -62,7 +63,7 @@ struct scribe_resource {
 	struct list_head lock_regions;
 };
 
-void scribe_init_resource(struct scribe_resource *res, int type);
+void scribe_init_resource(struct scribe_resource *res, void *object, int type);
 void scribe_reset_resource(struct scribe_resource *res);
 struct scribe_res_map;
 void scribe_reset_res_map(struct scribe_res_map *map);
@@ -70,12 +71,6 @@ void scribe_reset_res_map(struct scribe_res_map *map);
 #ifdef CONFIG_LOCKDEP
 bool is_scribe_resource_key(struct lock_class_key *key);
 #endif
-
-struct scribe_res_map_ops;
-extern struct scribe_res_map_ops scribe_context_map_ops;
-extern struct scribe_res_map_ops scribe_pid_map_ops;
-extern struct scribe_res_map_ops scribe_sunaddr_map_ops;
-
 
 /*
  * scribe_res_map is a generic container for resources.
@@ -90,24 +85,42 @@ struct scribe_res_map {
 	struct scribe_res_map_ops *ops;
 
 	/*
-	 * In some case, we don't want a hash table, but a simple list.
-	 * We also want to be able to embbed this struct into another one
+	 * In some case, we don't want a hash table, but a simple list,
+	 * embedded into another struct (cannot do dynamic allocation of the
+	 * hash table).
+	 * In other cases, we want to specify the size of the hash table.
 	 */
 	struct hlist_head head[1];
+};
 
-	/*
-	 * We'd love to put the resource type here but we don't for memory
-	 * usage: This struct is embedded in each file struct and inodes.
-	 */
+struct scribe_res_user;
+struct scribe_res_map_ops {
+	int type;
+
+	/* alloc_mres is responsible for setting the mr_key value */
+	struct scribe_mapped_res * (*alloc_mres) (void *key,
+						  struct scribe_res_user *user);
+	void (*free_mres) (struct scribe_mapped_res *mres);
+
+	void * (*get_object) (struct scribe_res_map *map, void *key);
+
+	unsigned long hash_bits;
+	unsigned long (*hash_fn) (struct scribe_res_map *map, void *key);
+	bool (*cmp_keys) (void *key1, void *key2);
 };
 
 /*
  * Initializer for a resource mapper without a hash table.
- * In this case, the key is assumed to be a scribe context.
+ * In this case, the key is generally be a scribe context.
  */
 extern void scribe_init_res_map(struct scribe_res_map *map,
 				struct scribe_res_map_ops *ops);
 extern void scribe_exit_res_map(struct scribe_res_map *map);
+
+extern struct scribe_mapped_res *scribe_alloc_mres(
+				void *key, struct scribe_res_user *user);
+extern void scribe_free_mres(struct scribe_mapped_res *mres);
+
 
 struct scribe_res_user {
 	struct hlist_head pre_alloc_mres;
@@ -143,10 +156,9 @@ extern int scribe_resource_prepare(void);
 #define SCRIBE_INTERRUPT_USERS	0x0200
 #define SCRIBE_IMPLICIT_UNLOCK	0x0400
 #define SCRIBE_CAN_DOWNGRADE	0x0800
-extern void scribe_lock_object(void *object, struct scribe_resource *res,
-			       int flags);
-extern void scribe_lock_object_key(void *object, struct scribe_res_map *map,
-				   void *key, int res_type, int flags);
+extern void scribe_lock_object(struct scribe_resource *res, int flags);
+extern void scribe_lock_object_key(struct scribe_res_map *map,
+				   void *key, int flags);
 
 extern void scribe_lock_file_no_inode(struct file *file);
 extern void scribe_lock_file_read(struct file *file);
@@ -201,8 +213,11 @@ extern void scribe_lock_ppid_ptr_read(struct task_struct *p);
 extern void scribe_lock_ppid_ptr_write(struct task_struct *p);
 
 struct sockaddr_un;
-extern void scribe_lock_sunaddr_read(struct sockaddr_un *sunaddr, int addr_len);
-extern void scribe_lock_sunaddr_write(struct sockaddr_un *sunaddr, int addr_len);
+typedef void *lock_cookie_t;
+extern void scribe_lock_sunaddr_read(struct sockaddr_un *sunaddr, int addr_len,
+				     lock_cookie_t *cookie);
+extern void scribe_lock_sunaddr_write(struct sockaddr_un *sunaddr, int addr_len,
+				      lock_cookie_t *cookie);
 
 extern void scribe_unlock(void *object);
 extern void scribe_unlock_discard(void *object);

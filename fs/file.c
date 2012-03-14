@@ -318,7 +318,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	atomic_set(&newf->count, 1);
 
 #ifdef CONFIG_SCRIBE
-	scribe_init_resource(&newf->scribe_resource,
+	scribe_init_resource(&newf->scribe_resource, newf,
 			     SCRIBE_RES_TYPE_FILES_STRUCT);
 #endif
 	spin_lock_init(&newf->file_lock);
