@@ -225,7 +225,7 @@ static int __memcmp(const void *cs, const void *ct, size_t count)
 	return -1;
 }
 
-static void ensure_data_correctness(struct scribe_ps *scribe,
+void scribe_ensure_data_correctness(struct scribe_ps *scribe,
 				    const void *recorded_data, const void *data,
 				    size_t count)
 {
@@ -355,8 +355,8 @@ static void scribe_post_uaccess_replay(struct scribe_ps *scribe,
 
 	if (!(desc->flags & SCRIBE_DATA_NON_DETERMINISTIC)) {
 		if (likely(desc->data))
-			ensure_data_correctness(scribe, event_data,
-						desc->data, desc->size);
+			scribe_ensure_data_correctness(scribe, event_data,
+						       desc->data, desc->size);
 		else
 			scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_DATA_TYPE,
 				       .type = SCRIBE_DATA_NON_DETERMINISTIC);

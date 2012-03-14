@@ -398,10 +398,14 @@ static inline void wait_key_set(poll_table *wait, unsigned long in,
 	}
 }
 
+void scribe_ensure_data_correctness(struct scribe_ps *scribe,
+				    const void *recorded_data, const void *data,
+				    size_t count);
+
 static int do_select_replay(int n, fd_set_bits *fds)
 {
 	struct scribe_ps *scribe = current->scribe;
-	int retval, i, err, num_fget;
+	int retval, i, err, num_fget, old_fd;
 	bool filp_got_in_the_table;
 	struct poll_wqueues table;
 
@@ -466,6 +470,10 @@ static int do_select_replay(int n, fd_set_bits *fds)
 					retval = -ENOMEM;
 					goto out;
 				}
+
+				old_fd = -1;
+				scribe_value(&old_fd);
+				scribe_ensure_data_correctness(scribe, &old_fd, &i, sizeof(old_fd));
 
 				file = fget_light(i, &fput_needed);
 				if (file) {
@@ -569,6 +577,13 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 					break;
 				}
 				num_fget++;
+
+				err = scribe_value(&i);
+				if (err < 0) {
+					retval = err;
+					mask = 0;
+					break;
+				}
 
 				file = fget_light(i, &fput_needed);
 				if (file) {
