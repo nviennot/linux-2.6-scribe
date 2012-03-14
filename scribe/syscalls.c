@@ -281,9 +281,24 @@ static int get_nr_syscall(struct pt_regs *regs)
 	return nr;
 }
 
+/* Argument list sizes for sys_socketcall */
+#define AL(x) (x)
+static const unsigned char socket_nargs[20] = {
+	AL(0),AL(3),AL(3),AL(3),AL(2),AL(3),
+	AL(3),AL(3),AL(4),AL(4),AL(4),AL(6),
+	AL(6),AL(2),AL(5),AL(5),AL(3),AL(3),
+	AL(4),AL(5)
+};
+
+#undef AL
+
 static int get_num_args(int nr)
 {
 	struct syscall_metadata *meta;
+
+	if ((nr & SCRIBE_SYSCALL_BASE_MASK) == SCRIBE_SOCKETCALL_BASE)
+		return socket_nargs[nr - SCRIBE_SOCKETCALL_BASE];
+
 	meta = syscall_nr_to_meta(nr);
 	if (!meta)
 		return 0;
