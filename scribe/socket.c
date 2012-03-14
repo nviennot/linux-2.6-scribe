@@ -101,6 +101,18 @@ out:
 static unsigned int scribe_poll(struct file *file, struct socket *sock,
 				struct poll_table_struct *wait)
 {
+	struct scribe_ps *scribe = current->scribe;
+
+	if (!scribe_is_deterministic(sock) &&
+	    is_replaying(scribe) &&
+	    !should_scribe_resources(scribe)) {
+		/*
+		 * For a new syscall, we'll just pretend that the socket is
+		 * usable.
+		 */
+		return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLWRBAND;
+	}
+
 	return sock->real_ops->poll(file, sock, wait);
 }
 
