@@ -410,6 +410,8 @@ int scribe_check_deadlock(struct scribe_context *ctx)
 		__set_current_state(TASK_RUNNING);
 	}
 
+	scribe_print_resources(ctx->res_ctx);
+
 	scribe_kill(ctx, -EDEADLK);
 	return 0;
 }

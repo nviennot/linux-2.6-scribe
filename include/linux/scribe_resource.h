@@ -65,6 +65,10 @@ struct scribe_resource {
 
 void scribe_init_resource(struct scribe_resource *res, void *object, int type);
 void scribe_reset_resource(struct scribe_resource *res);
+
+struct scribe_res_context;
+void scribe_print_resources(struct scribe_res_context *res_ctx);
+
 struct scribe_res_map;
 void scribe_reset_res_map(struct scribe_res_map *map);
 

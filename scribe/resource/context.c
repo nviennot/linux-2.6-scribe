@@ -52,6 +52,38 @@ void scribe_init_resource(struct scribe_resource *res, void *object, int type)
 	INIT_LIST_HEAD(&res->lock_regions);
 }
 
+void scribe_print_resources(struct scribe_res_context *res_ctx)
+{
+	struct scribe_resource *res;
+	char desc[256];
+
+	printk("Resources in waiting state:\n");
+
+	spin_lock_bh(&res_ctx->lock);
+	list_for_each_entry(res, &res_ctx->tracked, node) {
+		wait_queue_head_t *q = &res->wait;
+		wait_queue_t *wq;
+
+		if (list_empty(&q->task_list))
+			continue;
+
+		get_description(res, desc, sizeof(desc));
+		printk("  Resource id=%d, serial=%d, desc=%s\n",
+		       res->id, atomic_read(&res->serial), desc);
+
+		spin_lock(&q->lock);
+		list_for_each_entry(wq, &q->task_list, task_list) {
+			struct task_struct *p = wq->private;
+			printk("    pid=%d is waiting for serial=%d\n",
+			       p->scribe->queue->pid,
+			       p->scribe->waiting_for_serial);
+		}
+		spin_unlock(&q->lock);
+
+	}
+	spin_unlock_bh(&res_ctx->lock);
+}
+
 
 static void acquire_res(struct scribe_context *ctx, struct scribe_resource *res,
 			bool *lock_dropped)
