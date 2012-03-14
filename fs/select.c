@@ -470,12 +470,7 @@ static int do_select_replay(int n, fd_set_bits *fds)
 				file = fget_light(i, &fput_needed);
 				if (file) {
 					err = scribe_value(&filp_got_in_the_table);
-					if (err < 0) {
-						retval = err;
-						goto out;
-					}
-
-					if (filp_got_in_the_table)
+					if (!err && filp_got_in_the_table)
 						table.pt.qproc(file, NULL, &table.pt);
 
 					fput_light(file, fput_needed);
