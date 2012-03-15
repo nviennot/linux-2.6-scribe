@@ -197,30 +197,29 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 	return 0;
 
 diverge:
-#define DIVERGE(fn)					\
-	fn(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,	\
-	   .nr = scribe->syscall.nr,			\
-	   .num_args = scribe->syscall.num_args,	\
-	   .args[0] = scribe->syscall.args[0],		\
-	   .args[1] = scribe->syscall.args[1],		\
-	   .args[2] = scribe->syscall.args[2],		\
-	   .args[3] = scribe->syscall.args[3],		\
-	   .args[4] = scribe->syscall.args[4],		\
-	   .args[5] = scribe->syscall.args[5])
-
 	if (should_strict_replay(scribe)) {
 		event.generic = scribe_dequeue_event(scribe->queue,
 						     SCRIBE_NO_WAIT);
 		scribe_free_event(event.generic);
-		DIVERGE(scribe_diverge);
-		return -EDIVERGE;
-	} else {
-		DIVERGE(scribe_mutation);
-		scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
-		scribe->orig_ret = 0;
-		return 0;
 	}
-#undef DIVERGE
+
+	scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
+			.nr = scribe->syscall.nr,
+			.num_args = scribe->syscall.num_args,
+			.args[0] = scribe->syscall.args[0],
+			.args[1] = scribe->syscall.args[1],
+			.args[2] = scribe->syscall.args[2],
+			.args[3] = scribe->syscall.args[3],
+			.args[4] = scribe->syscall.args[4],
+			.args[5] = scribe->syscall.args[5]);
+
+	if (should_strict_replay(scribe)) {
+		return -EDIVERGE;
+	}
+
+	scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
+	scribe->orig_ret = 0;
+	return 0;
 }
 
 static int __scribe_need_syscall_ret(struct scribe_ps *scribe)

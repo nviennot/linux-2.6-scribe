@@ -412,7 +412,7 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 	spin_unlock(&(sp)->ctx->tasks_lock);				\
 })
 
-#define scribe_mutation(sp, _type, ...)					\
+#define __scribe_mutation(sp, _type, ...)				\
 ({									\
 	struct##_type *__new_event;					\
 	int __ret = 0;							\
@@ -434,6 +434,14 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 					  __new_event);			\
 	}								\
 	__ret;								\
+})
+
+#define scribe_mutation(sp, _type, ...)					\
+({									\
+	if (should_strict_replay((sp)))					\
+		scribe_diverge(sp, _type, __VA_ARGS__);			\
+	else								\
+		__scribe_mutation(sp, _type, __VA_ARGS__);		\
 })
 
 /* Bookmarks */
