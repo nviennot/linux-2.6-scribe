@@ -393,8 +393,10 @@ static ssize_t scribe_do_read(struct file *file, char __user *buf,
 		force_block = 1;
 		if (scribe->orig_ret == 0 && is_deterministic(file))
 			goto do_real_read;
-		if (len > scribe->orig_ret || scribe->orig_ret < 0)
+		if (scribe->orig_ret < 0)
 			len = scribe->orig_ret;
+		else if (should_have_fixed_io(scribe))
+			len = min(len, (ssize_t)scribe->orig_ret);
 		if (len <= 0) {
 			ret = len;
 			goto out;
@@ -543,8 +545,11 @@ static ssize_t scribe_do_write(struct file *file, const char __user *buf,
 	scribe_need_syscall_ret(scribe);
 
 	if (is_replaying(scribe)) {
-		if (count > scribe->orig_ret || scribe->orig_ret < 0)
+		if (scribe->orig_ret < 0)
 			count = scribe->orig_ret;
+		else if (should_have_fixed_io(scribe))
+			count = min(count, (ssize_t)scribe->orig_ret);
+
 		if (count <= 0)
 			return count;
 		force_block = 1;
@@ -876,13 +881,10 @@ out:
 }
 
 static ssize_t __do_readv_writev(int type, struct file *file,
-				 const struct iovec __user * uvector,
-				 unsigned long nr_segs, size_t forced_len,
+				 struct iovec *iov,
+				 unsigned long nr_segs, size_t tot_len,
 				 loff_t *pos)
 {
-	size_t tot_len;
-	struct iovec iovstack[UIO_FASTIOV];
-	struct iovec *iov = iovstack;
 	ssize_t ret;
 	io_fn_t fn;
 	iov_fn_t fnv;
@@ -892,15 +894,6 @@ static ssize_t __do_readv_writev(int type, struct file *file,
 		goto out;
 	}
 
-	ret = rw_copy_check_uvector(type, uvector, nr_segs,
-			ARRAY_SIZE(iovstack), iovstack, &iov);
-	if (ret <= 0)
-		goto out;
-
-	if (forced_len)
-		tot_len = forced_len;
-	else
-		tot_len = ret;
 	ret = rw_verify_area(type, file, pos, tot_len);
 	if (ret < 0)
 		goto out;
@@ -922,8 +915,6 @@ static ssize_t __do_readv_writev(int type, struct file *file,
 					     pos, fn);
 
 out:
-	if (iov != iovstack)
-		kfree(iov);
 	if ((ret + (type == READ)) > 0) {
 		if (type == READ)
 			fsnotify_access(file->f_path.dentry);
@@ -933,28 +924,32 @@ out:
 	return ret;
 }
 
-static ssize_t do_readv_writev(int type, struct file *file,
-			       const struct iovec __user * uvector,
-			       unsigned long nr_segs, size_t forced_len,
+static ssize_t do_readv_writev(struct scribe_ps *scribe, int type, struct file *file,
+			       struct iovec *iov, unsigned long nr_segs, size_t tot_len,
 			       loff_t *pos, int force_block)
 {
 	unsigned int saved_flags;
 	ssize_t ret;
+
+	if (scribe)
+		scribe->in_read_write = true;
 
 	if (force_block) {
 		saved_flags = file->f_flags;
 		file->f_flags &= ~O_NONBLOCK;
 	}
 
-	ret = __do_readv_writev(type, file, uvector, nr_segs, forced_len, pos);
+	ret = __do_readv_writev(type, file, iov, nr_segs, tot_len, pos);
 
 	if (force_block)
 		file->f_flags = saved_flags;
 
+	if (scribe)
+		scribe->in_read_write = false;
+
 	return ret;
 }
 
-#ifdef CONFIG_SCRIBE
 static ssize_t io_scribe_emul_copy_to_user(struct file *filp, char __user *buf,
 					   size_t len, loff_t *ppos)
 {
@@ -969,11 +964,19 @@ static ssize_t scribe_do_readv_writev(int type, struct file *file,
 	struct iovec iovstack[UIO_FASTIOV];
 	struct iovec *iov = iovstack;
 	int force_block = 0;
-	ssize_t ret, len = 0;
+	ssize_t ret, tot_len = 0;
 
-	if (!is_scribed(scribe))
-		return do_readv_writev(type, file, uvector, nr_segs, 0, pos,
-				       force_block);
+	ret = rw_copy_check_uvector(type, uvector, nr_segs,
+				    ARRAY_SIZE(iovstack), iovstack,
+				    &iov);
+	if (ret <= 0)
+		goto err;
+	tot_len = ret;
+
+	if (!is_scribed(scribe)) {
+		scribe = NULL;
+		goto out;
+	}
 
 	if (is_kernel_copy())
 		goto out;
@@ -985,65 +988,41 @@ static ssize_t scribe_do_readv_writev(int type, struct file *file,
 
 	if (is_replaying(scribe)) {
 		force_block = 1;
-		if (type == READ &&
-		    scribe->orig_ret == 0 && is_deterministic(file))
+		if (type == READ && is_deterministic(file) &&
+		    scribe->orig_ret == 0)
 			goto out;
 
+		if (scribe->orig_ret < 0)
+			tot_len = scribe->orig_ret;
+		else if (should_have_fixed_io(scribe))
+			tot_len = min(tot_len, (ssize_t)scribe->orig_ret);
 
-		/*
-		 * FIXME we need len but we don't have it, and we cannot
-		 * really read userspace buffers because of memory sync
-		 *
-		 *	if (len > scribe->orig_ret || scribe->orig_ret < 0)
-		 *		len = scribe->orig_ret;
-		*/
-
-		len = scribe->orig_ret;
-		if (len <= 0) {
-			rw_copy_check_uvector(type, uvector, nr_segs,
-					      ARRAY_SIZE(iovstack), iovstack,
-					      &iov);
-			ret = len;
-			goto free;
+		if (tot_len <= 0) {
+			ret = tot_len;
+			goto err;
 		}
 	}
 
-	if (type == READ) {
-		if (is_deterministic(file))
-			goto out;
-
+	if (type == READ && !is_deterministic(file)) {
 		scribe_data_non_det();
 
 		if (is_recording(scribe))
 			goto out;
 
-		rw_copy_check_uvector(type, uvector, nr_segs,
-				      ARRAY_SIZE(iovstack), iovstack, &iov);
-
-		ret =  __do_loop_readv_writev(file, iov, nr_segs, len, pos,
+		ret =  __do_loop_readv_writev(file, iov, nr_segs, tot_len, pos,
 					      io_scribe_emul_copy_to_user);
-		goto free;
+		goto err;
 	}
 
 out:
-	scribe->in_read_write = true;
-	ret = do_readv_writev(type, file, uvector, nr_segs, len, pos,
+	ret = do_readv_writev(scribe, type, file, iov, nr_segs, tot_len, pos,
 			      force_block);
-	scribe->in_read_write = false;
-free:
+
+err:
 	if (iov != iovstack)
 		kfree(iov);
 	return ret;
 }
-
-#else
-static ssize_t scribe_do_readv_writev(int type, struct file *file,
-				      const struct iovec __user * uvector,
-				      unsigned long nr_segs, loff_t *pos)
-{
-	return do_readv_writev(type, file, uvector, nr_segs, 0, pos, 0);
-}
-#endif /* CONFIG_SCRIBE */
 
 ssize_t vfs_readv(struct file *file, const struct iovec __user *vec,
 		  unsigned long vlen, loff_t *pos)

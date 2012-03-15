@@ -583,7 +583,7 @@ size_t scribe_emul_copy_to_user_iov(struct scribe_ps *scribe,
 		xfered = scribe_emul_copy_to_user(scribe,
 						  iov[i].iov_base, to_xfer);
 		ret += xfered;
-		if (xfered != to_xfer)
+		if (xfered < to_xfer)
 			return ret;
 	}
 	return ret;
@@ -602,7 +602,7 @@ size_t scribe_emul_copy_from_user_iov(struct scribe_ps *scribe,
 		xfered = scribe_emul_copy_from_user(scribe,
 						    iov[i].iov_base, to_xfer);
 		ret += xfered;
-		if (xfered != to_xfer)
+		if (xfered < to_xfer)
 			return ret;
 	}
 	return ret;

@@ -622,6 +622,10 @@ static inline int should_strict_replay(struct scribe_ps *scribe)
 {
 	return scribe->flags & SCRIBE_PS_STRICT_REPLAY;
 }
+static inline int should_have_fixed_io(struct scribe_ps *scribe)
+{
+	return scribe->flags & SCRIBE_PS_FIXED_IO;
+}
 
 static inline int should_scribe_syscall_ret(struct scribe_ps *scribe)
 {

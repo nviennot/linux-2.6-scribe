@@ -257,6 +257,10 @@ static int scribe_sendmsg(struct kiocb *iocb, struct socket *sock,
 		goto out;
 
 	if (is_replaying(scribe) && !segment_eq(get_fs(), KERNEL_DS)) {
+		if (should_have_fixed_io(scribe))
+			ret = min((size_t)ret, total_len);
+		else
+			ret = total_len;
 		scribe_emul_copy_from_user_iov(scribe, m->msg_iov,
 					       m->msg_iovlen, ret);
 	}

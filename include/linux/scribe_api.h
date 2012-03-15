@@ -89,7 +89,8 @@
 #define SCRIBE_PS_ENABLE_MM		0x00002000
 #define SCRIBE_PS_RET_CHECK		0x00004000
 #define SCRIBE_PS_STRICT_REPLAY		0x00008000
-#define SCRIBE_PS_ENABLE_ALL		0x0000ff00
+#define SCRIBE_PS_FIXED_IO		0x00010000
+#define SCRIBE_PS_ENABLE_ALL		0x00ffff00
 
 /*
  * These flags are used as a data type
