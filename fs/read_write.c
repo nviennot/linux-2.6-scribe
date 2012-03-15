@@ -327,7 +327,7 @@ static ssize_t do_read(struct file *file, char __user *buf,
 		if (count == 0)
 			break;
 		if (count < 0) {
-			ret = count;
+			ret = ret ?: count;
 			break;
 		}
 		len -= count;
@@ -378,21 +378,22 @@ static ssize_t scribe_do_read(struct file *file, char __user *buf,
 		return do_read(file, buf, len, ppos, force_block);
 
 	if (is_kernel_copy())
-		goto do_real_read;
+		goto do_real;
 
 	scribe_allow_uaccess();
 	allowed_uaccess = true;
 
 	if (!should_scribe_data(scribe))
-		goto do_real_read;
+		goto do_real;
 
 
 	scribe_need_syscall_ret(scribe);
 
 	if (is_replaying(scribe)) {
 		force_block = 1;
-		if (scribe->orig_ret == 0 && is_deterministic(file))
-			goto do_real_read;
+		if (scribe->orig_ret <= 0 && is_deterministic(file))
+			goto do_real;
+
 		if (scribe->orig_ret < 0)
 			len = scribe->orig_ret;
 		else if (should_have_fixed_io(scribe))
@@ -403,18 +404,17 @@ static ssize_t scribe_do_read(struct file *file, char __user *buf,
 		}
 	}
 
-	if (is_deterministic(file))
-		goto do_real_read;
+	if (!is_deterministic(file)) {
+		scribe_data_non_det();
 
-	scribe_data_non_det();
+		if (is_recording(scribe))
+			goto do_real;
 
-	if (is_recording(scribe))
-		goto do_real_read;
+		ret = scribe_emul_copy_to_user(scribe, buf, len);
+		goto out;
+	}
 
-	ret = scribe_emul_copy_to_user(scribe, buf, len);
-	goto out;
-
-do_real_read:
+do_real:
 	scribe->in_read_write = true;
 	ret = do_read(file, buf, len, ppos, force_block);
 	scribe->in_read_write = false;
@@ -512,7 +512,7 @@ static ssize_t do_write(struct file *file, const char __user *buf,
 		if (count == 0)
 			break;
 		if (count < 0) {
-			ret = count;
+			ret = ret ?: count;
 			break;
 		}
 		len -= count;
@@ -531,20 +531,24 @@ static ssize_t scribe_do_write(struct file *file, const char __user *buf,
 {
 	struct scribe_ps *scribe = current->scribe;
 	int force_block = 0;
-	ssize_t ret;
+	int ret;
 
 	if (!is_scribed(scribe))
 		return do_write(file, buf, count, ppos, force_block);
 
 	if (is_kernel_copy())
-		goto out;
+		goto do_real;
 
 	if (!should_scribe_data(scribe))
-		goto out;
+		goto do_real;
 
 	scribe_need_syscall_ret(scribe);
 
 	if (is_replaying(scribe)) {
+		force_block = 1;
+		if (scribe->orig_ret <= 0 && is_deterministic(file))
+			goto do_real;
+
 		if (scribe->orig_ret < 0)
 			count = scribe->orig_ret;
 		else if (should_have_fixed_io(scribe))
@@ -552,10 +556,9 @@ static ssize_t scribe_do_write(struct file *file, const char __user *buf,
 
 		if (count <= 0)
 			return count;
-		force_block = 1;
 	}
 
-out:
+do_real:
 	scribe->in_read_write = true;
 	ret = do_write(file, buf, count, ppos, force_block);
 	scribe->in_read_write = false;
@@ -970,27 +973,26 @@ static ssize_t scribe_do_readv_writev(int type, struct file *file,
 				    ARRAY_SIZE(iovstack), iovstack,
 				    &iov);
 	if (ret <= 0)
-		goto err;
+		goto out;
 	tot_len = ret;
 
 	if (!is_scribed(scribe)) {
 		scribe = NULL;
-		goto out;
+		goto do_real;
 	}
 
 	if (is_kernel_copy())
-		goto out;
+		goto do_real;
 
 	if (!should_scribe_data(scribe))
-		goto out;
+		goto do_real;
 
 	scribe_need_syscall_ret(scribe);
 
 	if (is_replaying(scribe)) {
 		force_block = 1;
-		if (type == READ && is_deterministic(file) &&
-		    scribe->orig_ret == 0)
-			goto out;
+		if (scribe->orig_ret <= 0 && is_deterministic(file))
+			goto do_real;
 
 		if (scribe->orig_ret < 0)
 			tot_len = scribe->orig_ret;
@@ -999,7 +1001,7 @@ static ssize_t scribe_do_readv_writev(int type, struct file *file,
 
 		if (tot_len <= 0) {
 			ret = tot_len;
-			goto err;
+			goto out;
 		}
 	}
 
@@ -1007,18 +1009,18 @@ static ssize_t scribe_do_readv_writev(int type, struct file *file,
 		scribe_data_non_det();
 
 		if (is_recording(scribe))
-			goto out;
+			goto do_real;
 
 		ret =  __do_loop_readv_writev(file, iov, nr_segs, tot_len, pos,
 					      io_scribe_emul_copy_to_user);
-		goto err;
+		goto out;
 	}
 
-out:
+do_real:
 	ret = do_readv_writev(scribe, type, file, iov, nr_segs, tot_len, pos,
 			      force_block);
 
-err:
+out:
 	if (iov != iovstack)
 		kfree(iov);
 	return ret;
