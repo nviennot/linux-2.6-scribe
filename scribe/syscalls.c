@@ -138,7 +138,7 @@ static int scribe_need_syscall_ret_record(struct scribe_ps *scribe)
 
 static bool looks_like_address(unsigned long value)
 {
-	return !!(value & 0xff700000);
+	return !!(value & 0xff800000);
 }
 
 static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
