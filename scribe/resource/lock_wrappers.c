@@ -370,8 +370,8 @@ void scribe_post_fput(struct file *file, struct scribe_fput_context *fput_ctx)
 	scribe = current->scribe;
 
 	/*
-	 * The fput locking is done in a write mode only when __fput()
-	 * was called.
+	 * The fput locking is done in a write mode only when the file pointer
+	 * has been destroyed.
 	 */
 	if (!fput_ctx->file_has_been_destroyed &&
 	    (lock_region->flags & SCRIBE_CAN_DOWNGRADE))
