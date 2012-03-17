@@ -357,6 +357,7 @@ pipe_read(struct kiocb *iocb, const struct iovec *_iov,
 	ssize_t ret;
 	struct iovec *iov = (struct iovec *)_iov;
 	size_t total_len;
+	struct scribe_ps *scribe = current->scribe;
 	int is_current_scribed;
 
 	total_len = iov_length(iov, nr_segs);
@@ -364,7 +365,13 @@ pipe_read(struct kiocb *iocb, const struct iovec *_iov,
 	if (unlikely(total_len == 0))
 		return 0;
 
-	is_current_scribed = is_ps_scribed(current);
+	is_current_scribed = is_scribed(scribe);
+	if (is_current_scribed)
+		scribe_need_syscall_ret(scribe);
+
+	if (is_replaying(scribe) && scribe->orig_ret < 0)
+		return scribe->orig_ret;
+
 	do_wakeup = 0;
 	ret = 0;
 	mutex_lock(&inode->i_mutex);
@@ -380,9 +387,8 @@ pipe_read(struct kiocb *iocb, const struct iovec *_iov,
 			int error, atomic;
 
 			if (chars < total_len &&
-			    is_ps_replaying(current) &&
-			    !unlikely(is_scribe_context_dead(
-						current->scribe->ctx))) {
+			    is_replaying(scribe) &&
+			    !unlikely(is_scribe_context_dead(scribe->ctx))) {
 				/*
 				 * We need to wait for the exact same number
 				 * of bytes since copy_from_user() need to
@@ -499,6 +505,7 @@ pipe_write(struct kiocb *iocb, const struct iovec *_iov,
 	struct iovec *iov = (struct iovec *)_iov;
 	size_t total_len;
 	ssize_t chars;
+	struct scribe_ps *scribe = current->scribe;
 	int is_current_scribed, can_epipe;
 
 	total_len = iov_length(iov, nr_segs);
@@ -506,19 +513,18 @@ pipe_write(struct kiocb *iocb, const struct iovec *_iov,
 	if (unlikely(total_len == 0))
 		return 0;
 
-	is_current_scribed = is_ps_scribed(current);
-
+	is_current_scribed = is_scribed(scribe);
 	if (is_current_scribed)
-		scribe_need_syscall_ret(current->scribe);
+		scribe_need_syscall_ret(scribe);
 
 	can_epipe = 1;
-	if (is_ps_replaying(current)) {
+	if (is_replaying(scribe)) {
 		can_epipe = 0;
 		/*
 		 * If we failed during the recording, we have to fail during
 		 * the replay. But if we didn't, we must not fail.
 		 */
-		if (current->scribe->orig_ret == -EPIPE)
+		if (scribe->orig_ret == -EPIPE)
 			return -EPIPE;
 	}
 

@@ -308,6 +308,9 @@ void __scribe_kill(struct scribe_context *ctx, struct scribe_event *reason)
 		return;
 	}
 
+	if (reason)
+		dump_stack();
+
 	/*
 	 * The SCRIBE_STATE_MASK flags has to be clear here (as opposed to
 	 * after the killing) to guard against races with scribe_attach()
