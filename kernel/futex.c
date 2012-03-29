@@ -156,6 +156,9 @@ static struct futex_hash_bucket *hash_futex(union futex_key *key)
 		 * thing).
 		 */
 
+		if (scribe_futex_hash_disabled(scribe))
+			return &futex_queues[0];
+
 		skey.both.word = key->both.word;
 		skey.both.ptr = NULL;
 		skey.both.offset = key->both.offset;

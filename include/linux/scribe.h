@@ -687,7 +687,10 @@ static inline int scribe_mm_disabled(struct scribe_ps *scribe)
 {
 	return scribe->ctx->flags & SCRIBE_DISABLE_MM;
 }
-
+static inline int scribe_futex_hash_disabled(struct scribe_ps *scribe)
+{
+	return scribe->ctx->flags & SCRIBE_DISABLE_FUTEX_HASH;
+}
 extern void scribe_mem_reload(struct scribe_ps *scribe);
 static inline void scribe_set_flags(struct scribe_ps *scribe,
 				    unsigned long flags)
