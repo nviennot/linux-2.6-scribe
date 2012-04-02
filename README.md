@@ -16,7 +16,7 @@ occur at arbitrary times into synchronous events that are much easier to
 record and replay.
 
 For more details about the theory behind it, you can read the
-[Scribe paper](http://www.ncl.cs.columbia.edu/publications/sigmetrics2010_scribe.pdf).
+[Scribe paper](http://viennot.biz/scribe.pdf).
 
 Scribe is general purpose record replay framework.
 
