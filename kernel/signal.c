@@ -2767,9 +2767,12 @@ SYSCALL_DEFINE4(rt_sigprocmask, int, how, sigset_t __user *, set,
 	int error = -EINVAL;
 	sigset_t old_set, new_set;
 
+	scribe_allow_uaccess();
+
 	/* XXX: Don't preclude handling different sized sigset_t's.  */
 	if (sigsetsize != sizeof(sigset_t))
 		goto out;
+
 
 	if (set) {
 		error = -EFAULT;
@@ -2794,6 +2797,7 @@ SYSCALL_DEFINE4(rt_sigprocmask, int, how, sigset_t __user *, set,
 	}
 	error = 0;
 out:
+	scribe_forbid_uaccess();
 	return error;
 }
 
