@@ -13,6 +13,8 @@
 #include <linux/kthread.h>
 #include <linux/splice.h>
 #include <linux/completion.h>
+#include <linux/mm.h>
+#include <linux/mutex.h>
 #include <linux/scribe.h>
 
 /*
@@ -32,7 +34,64 @@ struct scribe_pump {
 	char *buffer;
 	struct file *logfile;
 	int flags;
+
+	struct list_head node;
+	bool force_run;
+	wait_queue_head_t idle_wait;
 };
+
+/* Shrinker */
+
+static LIST_HEAD(pumps);
+static DEFINE_MUTEX(pumps_lock);
+
+static void going_idle(struct scribe_pump *pump)
+{
+	pump->force_run = false;
+	wake_up(&pump->idle_wait);
+}
+
+static int pump_shrink(struct shrinker *s, int nr_to_scan, gfp_t gfp_mask)
+{
+	struct scribe_pump *pump;
+	DEFINE_WAIT(wait);
+
+	if ((gfp_mask & GFP_KERNEL) != GFP_KERNEL)
+		return (nr_to_scan == 0) ? 0 : -1;
+
+	mutex_lock(&pumps_lock);
+
+	/* We tell all the queue to flush their buffers */
+	list_for_each_entry(pump, &pumps, node) {
+		pump->force_run = true;
+		/* Not the ideal wait queue, but I guess that's fine  for now. */
+		wake_up(&pump->ctx->tasks_wait);
+	}
+
+	/* and wait until they go idle again */
+	list_for_each_entry(pump, &pumps, node) {
+		wait_event(pump->idle_wait, !pump->force_run);
+	}
+
+	mutex_unlock(&pumps_lock);
+
+	/*
+	 * XXX We are not complying with the API, but doing so would be hard.
+	 * Is it important ?
+	 */
+
+	return 0;
+}
+
+static struct shrinker pump_shrinker = {
+	.shrink = pump_shrink,
+	.seeks = DEFAULT_SEEKS
+};
+
+void scribe_init_pump(void)
+{
+	register_shrinker(&pump_shrinker);
+}
 
 /* Record */
 
@@ -234,9 +293,12 @@ out:
 	return err;
 }
 
-static void event_pump_record(struct scribe_context *ctx,
-			      char *buf, struct file *file)
+static void event_pump_record(struct scribe_pump *pump)
 {
+	struct scribe_context *ctx = pump->ctx;
+	char *buf = pump->buffer;
+	struct file *file = pump->logfile;
+
 	struct scribe_queue *current_queue = NULL;
 	struct scribe_event *pending_event = NULL;
 	size_t pending_offset = 0;
@@ -254,8 +316,10 @@ static void event_pump_record(struct scribe_context *ctx,
 		 * And instant return when the context goes idle
 		 */
 		if (!buffer_full) {
+			going_idle(pump);
 			wait_event_timeout(ctx->tasks_wait,
-					   is_scribe_context_dead(ctx), HZ);
+				is_scribe_context_dead(ctx) || pump->force_run,
+				HZ);
 		}
 
 		ret = serialize_events(ctx, buf, PUMP_BUFFER_SIZE,
@@ -434,10 +498,13 @@ out:
  * event_pump_replay() reads from @file to @buf, and call deserialize_events()
  * to instantiate each event.
  */
-static void event_pump_replay(struct scribe_context *ctx, char *buf,
-			      struct file *file)
+static void event_pump_replay(struct scribe_pump *pump)
 
 {
+	struct scribe_context *ctx = pump->ctx;
+	char *buf = pump->buffer;
+	struct file *file = pump->logfile;
+
 	struct scribe_queue *queue;
 	struct scribe_queue *current_queue = NULL;
 	struct scribe_queue *pre_alloc_queue = NULL;
@@ -534,14 +601,23 @@ static int pump_kthread(void *_pump)
 {
 	struct scribe_pump *pump = _pump;
 
+	mutex_lock(&pumps_lock);
+	list_add_tail(&pump->node, &pumps);
+	mutex_unlock(&pumps_lock);
+
 	if (pump->flags & SCRIBE_RECORD)
-		event_pump_record(pump->ctx, pump->buffer, pump->logfile);
+		event_pump_record(pump);
 	else if (pump->flags & SCRIBE_REPLAY)
-		event_pump_replay(pump->ctx, pump->buffer, pump->logfile);
+		event_pump_replay(pump);
 	else
 		BUG();
 
+	going_idle(pump);
 	fput(pump->logfile);
+
+	mutex_lock(&pumps_lock);
+	list_del(&pump->node);
+	mutex_unlock(&pumps_lock);
 
 	complete(&pump->done);
 
@@ -560,6 +636,9 @@ struct scribe_pump *scribe_pump_alloc(struct scribe_context *ctx)
 	init_completion(&pump->done);
 	pump->logfile = NULL;
 	pump->flags = 0;
+
+	init_waitqueue_head(&pump->idle_wait);
+	pump->force_run = false;
 
 	pump->buffer = (char *)__get_free_pages(GFP_KERNEL, PUMP_BUFFER_ORDER);
 	if (!pump->buffer) {
