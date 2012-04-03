@@ -500,8 +500,7 @@ retry:
 		 * If some queue were left open, that means that we didn't
 		 * have the entire event stream, we need to kill the context.
 		 */
-		if (ret >= 0 && !queue->stream.sealed)
-			ret = -EPIPE;
+		scribe_seal_queue(queue);
 		if (ret < 0) {
 			if (!is_scribe_context_dead(ctx)) {
 				spin_unlock(&ctx->queues_lock);
