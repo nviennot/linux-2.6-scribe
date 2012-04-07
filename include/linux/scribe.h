@@ -173,6 +173,31 @@ extern struct scribe_event *scribe_dequeue_event(
 				struct scribe_queue *queue, int wait);
 extern struct scribe_event *scribe_peek_event(
 				struct scribe_queue *queue, int wait);
+extern struct scribe_event *scribe_peek_event_next(
+				struct scribe_queue *queue, int wait,
+				struct scribe_event *event);
+
+#define scribe_find_event_specific(sp, ...)				\
+({									\
+	int _types[] = {__VA_ARGS__};					\
+	struct scribe_event *_event = NULL;				\
+	bool _stop = false;						\
+	int _i;								\
+									\
+	while (!_stop) {						\
+		_event = scribe_peek_event_next((sp)->queue, SCRIBE_WAIT, _event); \
+		if (IS_ERR(_event))					\
+			break;						\
+									\
+		for (_i = 0; _i < ARRAY_SIZE(_types); _i++)		\
+			if (_event->type == _types[_i]) {		\
+				_stop = true;				\
+				break;					\
+		}							\
+	}								\
+	_event;								\
+})
+
 #define scribe_dequeue_event_specific(sp, _type)			\
 ({									\
 	struct scribe_event *__event;					\

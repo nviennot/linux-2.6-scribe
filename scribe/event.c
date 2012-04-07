@@ -351,32 +351,38 @@ void scribe_queue_events_stream(struct scribe_stream *stream,
 }
 
 static struct scribe_event *__scribe_peek_event(struct scribe_stream *stream,
-						int wait, int remove)
+						int wait, int remove,
+						struct scribe_event *pos)
 {
 	scribe_insert_point_t *ip = &stream->master;
 	struct scribe_substream *substream;
 	struct scribe_event *event;
 	unsigned long flags;
+	struct list_head *head;
 
-retry:
-	if (wait == SCRIBE_WAIT_INTERRUPTIBLE &&
-	    wait_event_interruptible(*stream->wait,
-				     !scribe_is_stream_empty(stream) ||
-				     stream->sealed))
-		return ERR_PTR(-ERESTARTSYS);
-
-	if (wait == SCRIBE_WAIT)
-		wait_event(*stream->wait,
-		       !scribe_is_stream_empty(stream) ||
-		       stream->sealed);
-
-	spin_lock_irqsave(&stream->lock, flags);
 	/*
 	 * We are not using get_substream() because we are reaching events on
 	 * the head of the stream.
 	 */
 	substream = ip;
-	if (list_empty(&substream->events)) {
+
+	/* If pos == NULL, it means that we want the first event */
+	head = pos ? &pos->node : &substream->events;
+
+retry:
+	if (wait == SCRIBE_WAIT_INTERRUPTIBLE &&
+	    wait_event_interruptible(*stream->wait,
+				     !list_is_last(head, &substream->events) ||
+				     stream->sealed))
+		return ERR_PTR(-ERESTARTSYS);
+
+	if (wait == SCRIBE_WAIT)
+		wait_event(*stream->wait,
+			   !list_is_last(head, &substream->events) ||
+			   stream->sealed);
+
+	spin_lock_irqsave(&stream->lock, flags);
+	if (list_is_last(head, &substream->events)) {
 		spin_unlock_irqrestore(&stream->lock, flags);
 		/*
 		 * If the queue is sealed, the queue is officially dead.
@@ -388,7 +394,7 @@ retry:
 			goto retry;
 		return ERR_PTR(-EAGAIN);
 	}
-	event = list_first_entry(&substream->events, __typeof__(*event), node);
+	event = list_entry(head->next, __typeof__(*event), node);
 	if (likely(remove)) {
 		list_del(&event->node);
 		if (stream->last_event_jiffies)
@@ -405,7 +411,7 @@ struct scribe_event *scribe_dequeue_event(struct scribe_queue *queue, int wait)
 	struct scribe_context *ctx = queue->ctx;
 	unsigned long flags;
 
-	event = __scribe_peek_event(&queue->stream, wait, 1);
+	event = __scribe_peek_event(&queue->stream, wait, 1, NULL);
 	if (IS_ERR(event))
 		return event;
 
@@ -424,7 +430,7 @@ struct scribe_event *scribe_dequeue_event(struct scribe_queue *queue, int wait)
 struct scribe_event *scribe_dequeue_event_stream(struct scribe_stream *stream,
 						 int wait)
 {
-	return __scribe_peek_event(stream, wait, 1);
+	return __scribe_peek_event(stream, wait, 1, NULL);
 }
 
 /*
@@ -435,8 +441,15 @@ struct scribe_event *scribe_dequeue_event_stream(struct scribe_stream *stream,
  */
 struct scribe_event *scribe_peek_event(struct scribe_queue *queue, int wait)
 {
+	return scribe_peek_event_next(queue, wait, NULL);
+}
+
+/* XXX be careful, like with scribe_peek_event() */
+struct scribe_event *scribe_peek_event_next(struct scribe_queue *queue, int wait,
+					    struct scribe_event *pos)
+{
 	struct scribe_event *event;
-	event = __scribe_peek_event(&queue->stream, wait, 0);
+	event = __scribe_peek_event(&queue->stream, wait, 0, pos);
 	if (!IS_ERR(event))
 		queue->last_event_offset = event->log_offset;
 	return event;
@@ -478,7 +491,7 @@ bool scribe_is_stream_dead(struct scribe_stream *stream, int wait)
 		return false;
 
 	if (wait == SCRIBE_WAIT)
-		__scribe_peek_event(stream, SCRIBE_WAIT, 0);
+		__scribe_peek_event(stream, SCRIBE_WAIT, 0, NULL);
 
 	return stream->sealed && scribe_is_stream_empty(stream);
 }

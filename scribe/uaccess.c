@@ -153,14 +153,21 @@ static int get_data_event(struct scribe_ps *scribe, struct data_desc *desc)
 		 * maximum size).
 		 */
 
+		/*
+		 * XXX XXX We cannot dequeue in the middle of the stream
+		 * because our data event may act as a fence.
+		 * So we'll peek, which means that we'll have to dequeue it
+		 * eventually.
+		 */
+
 		if (desc->do_info)
-			event.info = scribe_dequeue_event_specific(
+			event.generic = scribe_find_event_specific(
 					scribe, SCRIBE_EVENT_DATA_INFO);
 		else if (desc->do_extra)
-			event.extra = scribe_dequeue_event_specific(
+			event.generic = scribe_find_event_specific(
 					scribe, SCRIBE_EVENT_DATA_EXTRA);
 		else
-			event.regular = scribe_dequeue_event_specific(
+			event.generic = scribe_find_event_specific(
 					scribe, SCRIBE_EVENT_DATA);
 		if (IS_ERR(event.generic))
 			return PTR_ERR(event.generic);
@@ -392,6 +399,8 @@ static void scribe_post_uaccess_replay(struct scribe_ps *scribe,
 static void __scribe_post_uaccess(struct scribe_ps *scribe,
 				  struct data_desc *desc)
 {
+	struct scribe_event *event;
+
 	if (!need_action(scribe, desc))
 		goto out;
 
@@ -402,8 +411,15 @@ static void __scribe_post_uaccess(struct scribe_ps *scribe,
 
 	if (is_recording(scribe))
 		scribe_post_uaccess_record(scribe, desc);
-	else /* replay */
+	else /* replay */ {
 		scribe_post_uaccess_replay(scribe, desc);
+
+		event = scribe_peek_event(scribe->queue, SCRIBE_NO_WAIT);
+		WARN_ON(IS_ERR(event));
+		if (event == desc->event.generic)
+			scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
+		desc->event.generic = NULL;
+	}
 
 out:
 	if (!is_kernel_copy() && scribe->to_be_copied_size)
@@ -465,7 +481,7 @@ size_t scribe_emul_copy_to_user(struct scribe_ps *scribe,
 				void __user *buf, ssize_t len)
 {
 	union scribe_event_data_union data_event;
-	struct scribe_event *event;
+	struct scribe_event *event = NULL;
 	bool has_user_buf;
 	size_t data_size, ret;
 	unsigned int recorded_flags;
@@ -479,12 +495,10 @@ size_t scribe_emul_copy_to_user(struct scribe_ps *scribe,
 		 * We are peeking events without a regular fence, but that's
 		 * okay since we'll stop once ret >= len.
 		 */
-		event = scribe_peek_event(scribe->queue, SCRIBE_WAIT);
-		if (IS_ERR(event))
-			return ret;
 
-		if (event->type != SCRIBE_EVENT_DATA_EXTRA &&
-		    event->type != SCRIBE_EVENT_DATA)
+		event = scribe_find_event_specific(scribe,
+				SCRIBE_EVENT_DATA_EXTRA, SCRIBE_EVENT_DATA);
+		if (IS_ERR(event))
 			return ret;
 
 		data_event.generic = (struct scribe_event *)event;
