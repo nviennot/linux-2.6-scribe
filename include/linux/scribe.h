@@ -554,6 +554,8 @@ struct scribe_ps {
 	int old_data_flags;
 	int can_uaccess;
 	bool in_read_write;
+	bool debug_res;
+
 
 	int waiting_for_serial;
 	struct scribe_res_user resources;

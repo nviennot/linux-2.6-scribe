@@ -1014,6 +1014,7 @@ int init_scribe(struct task_struct *p, struct scribe_context *ctx,
 	scribe_resource_init_user(&scribe->resources);
 	scribe->lock_next_file = 0;
 	scribe->do_dpath_scribing = true;
+	scribe->debug_res = false;
 
 	scribe_get_context(ctx);
 

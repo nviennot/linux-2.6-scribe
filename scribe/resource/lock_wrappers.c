@@ -329,34 +329,14 @@ void scribe_pre_fput(struct file *file, struct scribe_fput_context *fput_ctx)
 	if (file->f_op->scribe_sync_fput)
 		sync_fput = file->f_op->scribe_sync_fput(file);
 
-	if (sync_fput) {
-		/* unlock will be done in post_fput() */
-		if (lock_region) {
-			fput_ctx->lock_region = lock_region;
-			return;
-		}
+	/*
+	 * We don't need to sync fput, so we can unlock before fput().
+	 */
+	if (!lock_region)
+		return;
 
-		if (scribe_resource_prepare()) {
-			scribe_kill(scribe->ctx, -ENOMEM);
-			return;
-		}
-
-		lock_file(file, SCRIBE_WRITE | SCRIBE_CAN_DOWNGRADE |
-			        SCRIBE_HIGH_PRIORITY | SCRIBE_INTERRUPT_USERS);
-
-		/* TODO Optimize so that we don't need to search for the lock region */
-		lock_region = scribe_find_lock_region(user, file);
-		fput_ctx->lock_region = lock_region;
-	} else {
-		/*
-		 * We don't need to sync fput, so we can unlock before fput().
-		 */
-		if (!lock_region)
-			return;
-
-		if (lock_region->flags & SCRIBE_IMPLICIT_UNLOCK)
-			__scribe_unlock_region(scribe, lock_region, false);
-	}
+	if (lock_region->flags & SCRIBE_IMPLICIT_UNLOCK)
+		__scribe_unlock_region(scribe, lock_region, false);
 }
 
 void scribe_post_fput(struct file *file, struct scribe_fput_context *fput_ctx)

@@ -127,8 +127,7 @@ EXPORT_SYMBOL(poll_initwait);
 
 static void free_poll_entry(struct poll_table_entry *entry)
 {
-	if (entry->wait_address)
-		remove_wait_queue(entry->wait_address, &entry->wait);
+	remove_wait_queue(entry->wait_address, &entry->wait);
 	fput(entry->filp);
 }
 
@@ -228,8 +227,7 @@ static void __pollwait(struct file *filp, wait_queue_head_t *wait_address,
 	entry->key = p->key;
 	init_waitqueue_func_entry(&entry->wait, pollwake);
 	entry->wait.private = pwq;
-	if (wait_address)
-		add_wait_queue(wait_address, &entry->wait);
+	add_wait_queue(wait_address, &entry->wait);
 }
 
 int poll_schedule_timeout(struct poll_wqueues *pwq, int state,
@@ -398,134 +396,20 @@ static inline void wait_key_set(poll_table *wait, unsigned long in,
 	}
 }
 
-void scribe_ensure_data_correctness(struct scribe_ps *scribe,
-				    const void *recorded_data, const void *data,
-				    size_t count);
-
-static int do_select_replay(int n, fd_set_bits *fds)
-{
-	struct scribe_ps *scribe = current->scribe;
-	int retval, i, err, num_fget, old_fd;
-	bool filp_got_in_the_table;
-	struct poll_wqueues table;
-
-	/*
-	 * When replaying, we need to do all the fget/fput because
-	 * fput needs some synchronization (scribe_sync_fput file
-	 * operation)
-	 */
-
-	if (scribe_resource_prepare())
-		return -ENOMEM;
-
-	scribe_lock_files_read(current->files);
-	rcu_read_lock();
-	retval = max_select_fd(n, fds);
-	rcu_read_unlock();
-	scribe_unlock(current->files);
-
-	if (retval < 0)
-		return retval;
-	if (scribe->orig_ret == -EBADF)
-		return scribe->orig_ret;
-
-	n = retval;
-
-	err = scribe_value(&num_fget);
-	if (err < 0)
-		return err;
-
-	poll_initwait(&table);
-
-	retval = scribe->orig_ret;
-
-	while (num_fget) {
-		unsigned long *rinp, *routp, *rexp, *inp, *outp, *exp;
-		inp = fds->in; outp = fds->out; exp = fds->ex;
-		rinp = fds->res_in; routp = fds->res_out; rexp = fds->res_ex;
-
-		for (i = 0; i < n; ++rinp, ++routp, ++rexp) {
-			unsigned long in, out, ex, all_bits, bit = 1, j;
-			struct file *file = NULL;
-
-			in = *inp++; out = *outp++; ex = *exp++;
-			all_bits = in | out | ex;
-			if (all_bits == 0) {
-				i += __NFDBITS;
-				continue;
-			}
-
-			for (j = 0; j < __NFDBITS; ++j, ++i, bit <<= 1) {
-				int fput_needed;
-				if (i >= n)
-					break;
-				if (!(bit & all_bits))
-					continue;
-
-				if (num_fget-- <= 0)
-					goto out;
-
-				if (scribe_track_next_file(SCRIBE_WRITE |
-							   SCRIBE_CAN_DOWNGRADE)) {
-					retval = -ENOMEM;
-					goto out;
-				}
-
-				old_fd = -1;
-				scribe_value(&old_fd);
-				scribe_ensure_data_correctness(scribe, &old_fd, &i, sizeof(old_fd));
-
-				file = fget_light(i, &fput_needed);
-				if (file) {
-					err = scribe_value(&filp_got_in_the_table);
-					if (!err && filp_got_in_the_table)
-						table.pt.qproc(file, NULL, &table.pt);
-
-					fput_light(file, fput_needed);
-				}
-			}
-		}
-	}
-
-out:
-	poll_freewait(&table);
-	return retval;
-}
-
-static inline struct poll_table_entry *get_table_entry(struct poll_wqueues *p)
-{
-	struct poll_table_page *table = p->table;
-
-	if (p->inline_index < N_INLINE_POLL_ENTRIES)
-		return p->inline_entries + p->inline_index;
-
-	if (!table)
-		return NULL;
-	return table->entry;
-}
-
 int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 {
 	ktime_t expire, *to = NULL;
 	struct poll_wqueues table;
 	poll_table *wait;
-	int retval, err, i, timed_out = 0;
+	int retval, i, timed_out = 0;
 	unsigned long slack = 0;
-	scribe_insert_point_t ip;
-	struct scribe_ps *scribe = current->scribe;
-	bool recording = is_recording(scribe);
 	int num_fget = 0;
-	struct poll_table_entry *old_entry = NULL;
-	bool filp_got_in_the_table;
 
-	if (scribe_resource_prepare())
-		return -ENOMEM;
+	/* XXX Removed all the synchronization */
 
-	scribe_lock_files_read(current->files);
 	rcu_read_lock();
 	retval = max_select_fd(n, fds);
 	rcu_read_unlock();
-	scribe_unlock(current->files);
 
 	if (retval < 0)
 		return retval;
@@ -540,9 +424,6 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 
 	if (end_time && !timed_out)
 		slack = estimate_accuracy(end_time);
-
-	if (recording)
-		scribe_create_insert_point(&ip, &scribe->queue->stream);
 
 	retval = 0;
 	for (;;) {
@@ -571,39 +452,15 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 				if (!(bit & all_bits))
 					continue;
 
-				if (scribe_track_next_file(
-					SCRIBE_WRITE | SCRIBE_CAN_DOWNGRADE |
-					SCRIBE_HIGH_PRIORITY | SCRIBE_INTERRUPT_USERS)) {
-					retval = -ENOMEM;
-					break;
-				}
 				num_fget++;
-
-				err = scribe_value(&i);
-				if (err < 0) {
-					retval = err;
-					mask = 0;
-					break;
-				}
 
 				file = fget_light(i, &fput_needed);
 				if (file) {
 					f_op = file->f_op;
 					mask = DEFAULT_POLLMASK;
-					if (recording)
-						old_entry = get_table_entry(&table);
 					if (f_op && f_op->poll) {
 						wait_key_set(wait, in, out, bit);
 						mask = (*f_op->poll)(file, wait);
-					}
-
-					if (recording) {
-						filp_got_in_the_table = get_table_entry(&table) != old_entry;
-						err = scribe_value(&filp_got_in_the_table);
-						if (err < 0) {
-							retval = err;
-							mask = 0;
-						}
 					}
 
 					fput_light(file, fput_needed);
@@ -653,13 +510,6 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 		if (!poll_schedule_timeout(&table, TASK_INTERRUPTIBLE,
 					   to, slack))
 			timed_out = 1;
-	}
-
-	if (recording) {
-		err = scribe_value_at(&num_fget, &ip);
-		scribe_commit_insert_point(&ip);
-		if (err)
-			retval = err;
 	}
 
 	poll_freewait(&table);
@@ -734,10 +584,15 @@ int core_sys_select(int n, fd_set __user *inp, fd_set __user *outp,
 	if (scribe_need_syscall_ret(scribe))
 		return -ENOMEM;
 
-	if (is_replaying(scribe) && should_scribe_resources(scribe))
-		ret = do_select_replay(n, &fds);
-	else
+	if (is_replaying(scribe))
+		ret = scribe->orig_ret;
+	else {
+		if (is_scribed(scribe))
+			scribe->debug_res = true;
 		ret = do_select(n, &fds, end_time);
+		if (is_scribed(scribe))
+			scribe->debug_res = false;
+	}
 
 	if (ret < 0)
 		goto out;
@@ -816,6 +671,10 @@ static long do_pselect(int n, fd_set __user *inp, fd_set __user *outp,
 	}
 
 	ret = core_sys_select(n, inp, outp, exp, to);
+
+	if (tsp)
+		scribe_value(&end_time);
+
 	ret = poll_select_copy_remaining(&end_time, tsp, 0, ret);
 
 	if (ret == -ERESTARTNOHAND) {
