@@ -499,7 +499,8 @@ static inline struct poll_table_entry *get_table_entry(struct poll_wqueues *p)
 	if (p->inline_index < N_INLINE_POLL_ENTRIES)
 		return p->inline_entries + p->inline_index;
 
-	BUG_ON(!table);
+	if (!table)
+		return NULL;
 	return table->entry;
 }
 
@@ -514,7 +515,7 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 	struct scribe_ps *scribe = current->scribe;
 	bool recording = is_recording(scribe);
 	int num_fget = 0;
-	struct poll_table_entry *old_entry;
+	struct poll_table_entry *old_entry = NULL;
 	bool filp_got_in_the_table;
 
 	if (scribe_resource_prepare())
@@ -589,7 +590,8 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 				if (file) {
 					f_op = file->f_op;
 					mask = DEFAULT_POLLMASK;
-					old_entry = get_table_entry(&table);
+					if (recording)
+						old_entry = get_table_entry(&table);
 					if (f_op && f_op->poll) {
 						wait_key_set(wait, in, out, bit);
 						mask = (*f_op->poll)(file, wait);
