@@ -118,7 +118,8 @@ static inline int is_scribe_syscall(int nr)
 	return nr == __NR_get_scribe_flags ||
 	       nr == __NR_set_scribe_flags ||
 	       nr == __NR_scribe_send_event ||
-	       nr == __NR_scribe_recv_event;
+	       nr == __NR_scribe_recv_event ||
+	       nr == __NR_brk;
 }
 
 static int scribe_need_syscall_ret_record(struct scribe_ps *scribe)
