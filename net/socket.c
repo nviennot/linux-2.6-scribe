@@ -1531,12 +1531,14 @@ SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
 		if (is_interruption(scribe->orig_ret))
 			goto real_accept;
 
-		err = scribe_value(&should_fake_accept);
-		if (err < 0)
-			goto out_put;
+		if (scribe->orig_ret >= 0) {
+			err = scribe_value(&should_fake_accept);
+			if (err < 0)
+				goto out_put;
 
-		if (!should_fake_accept)
-			goto real_accept;
+			if (!should_fake_accept)
+				goto real_accept;
+		}
 
 		err = sock_create(PF_UNIX, SOCK_STREAM, 0, &newsock);
 		if (err < 0)
