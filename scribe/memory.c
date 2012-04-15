@@ -1835,12 +1835,28 @@ static int scribe_page_access_replay(struct scribe_ps *scribe,
 	scribe_mem_sync_point(scribe, MEM_SYNC_IN);
 	scribe_mem_sync_point(scribe, MEM_SYNC_OUT);
 
-	event = scribe_dequeue_event(scribe->queue, SCRIBE_WAIT);
+	event = scribe_peek_event(scribe->queue, SCRIBE_WAIT);
 	if (IS_ERR(event)) {
 		scribe_kill(scribe->ctx, PTR_ERR(event));
 		down_read(&mm->mmap_sem);
 		return PTR_ERR(event);
 	}
+
+
+
+	if (event->type != SCRIBE_EVENT_MEM_OWNED_WRITE_EXTRA &&
+	    event->type != SCRIBE_EVENT_MEM_OWNED_READ_EXTRA &&
+	    event->type != SCRIBE_EVENT_MEM_OWNED_WRITE &&
+	    event->type != SCRIBE_EVENT_MEM_OWNED_READ &&
+	    event->type != SCRIBE_EVENT_MEM_ALONE) {
+		rw_flag = write_access;
+		scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_MEM_OWNED,
+			       .address = address & PAGE_MASK,
+			       .write_access = write_access);
+		goto all_good;
+	}
+
+	event = scribe_dequeue_event(scribe->queue, SCRIBE_WAIT);
 
 	page_addr = address & PAGE_MASK;
 	if (!get_owned_event_info(scribe, event,
@@ -1856,6 +1872,8 @@ static int scribe_page_access_replay(struct scribe_ps *scribe,
 
 		wait_event(page->serial_wait,
 			   serial_match(scribe, page, serial));
+
+all_good:
 		down_read(&mm->mmap_sem);
 
 		spin_lock(&page->owners_lock);
