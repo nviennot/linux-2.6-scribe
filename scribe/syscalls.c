@@ -119,6 +119,9 @@ static inline int is_scribe_syscall(int nr)
 	       nr == __NR_set_scribe_flags ||
 	       nr == __NR_scribe_send_event ||
 	       nr == __NR_scribe_recv_event ||
+	       nr == __NR_mmap ||
+	       nr == __NR_mmap2 ||
+	       nr == __NR_prctl ||
 	       nr == __NR_brk;
 }
 
