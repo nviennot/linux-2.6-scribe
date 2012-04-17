@@ -576,6 +576,9 @@ void scribe_attach(struct scribe_ps *scribe)
 		 */
 		scribe->queue->stream.last_event_jiffies =
 			&ctx->last_event_jiffies;
+
+		scribe_init_queue(scribe->mutations_queue,
+				  ctx, scribe->queue->pid);
 	}
 
 	scribe->in_syscall = 0;

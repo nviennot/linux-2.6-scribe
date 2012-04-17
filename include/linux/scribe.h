@@ -112,10 +112,17 @@ struct scribe_queue {
 
 extern void scribe_init_stream(struct scribe_stream *stream);
 
+extern void scribe_start_mutations(struct scribe_ps *scribe);
+extern void scribe_stop_mutations(struct scribe_ps *scribe);
+
 extern struct scribe_queue *scribe_get_queue_by_pid(
 				struct scribe_context *ctx,
 				struct scribe_queue **pre_alloc_queue,
 				pid_t pid);
+
+extern void scribe_init_queue(struct scribe_queue *queue,
+			      struct scribe_context *ctx, pid_t pid);
+extern void scribe_exit_queue(struct scribe_queue *queue);
 extern void scribe_get_queue(struct scribe_queue *queue);
 extern void scribe_put_queue(struct scribe_queue *queue);
 extern void scribe_put_queue_locked(struct scribe_queue *queue);
@@ -136,6 +143,8 @@ extern void scribe_queue_event_at(scribe_insert_point_t *ip, void *event);
 extern void scribe_queue_event_stream(struct scribe_stream *stream,
 				      void *event);
 extern void scribe_queue_event(struct scribe_queue *queue, void *event);
+extern void scribe_queue_events_at(scribe_insert_point_t *ip,
+				   struct list_head *events);
 extern void scribe_queue_events_stream(struct scribe_stream *stream,
 				       struct list_head *events);
 
@@ -145,7 +154,7 @@ extern void scribe_queue_events_stream(struct scribe_stream *stream,
  *			       SCRIBE_EVENT_SYSCALL,
  *			       .nr = 1, .ret = 2);
  */
-#define scribe_queue_new_event_stream(stream, _type, ...)		\
+#define scribe_queue_new_event_at(ip, _type, ...)			\
 ({									\
 	struct##_type *__new_event;					\
 	int __ret = 0;							\
@@ -156,13 +165,16 @@ extern void scribe_queue_events_stream(struct scribe_stream *stream,
 	else {								\
 		*__new_event = (struct##_type)				\
 			{.h = {.type = _type},  __VA_ARGS__};		\
-		scribe_queue_event_stream(stream, __new_event);		\
+		scribe_queue_event_at(ip, __new_event);			\
 	}								\
 	__ret;								\
 })
 
+#define scribe_queue_new_event_stream(stream, _type, ...) \
+	scribe_queue_new_event_at(&(stream)->master, _type, __VA_ARGS__)
+
 #define scribe_queue_new_event(queue, _type, ...) \
-	scribe_queue_new_event_stream(&queue->stream, _type, __VA_ARGS__)
+	scribe_queue_new_event_stream(&(queue)->stream, _type, __VA_ARGS__)
 
 #define SCRIBE_NO_WAIT			0
 #define SCRIBE_WAIT			1
@@ -460,7 +472,8 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 	__ret;								\
 })
 
-#define scribe_mutation(sp, _type, ...)					\
+
+#define scribe_mutation(sp, _type, ...)				\
 ({									\
 	if (should_strict_replay((sp)))					\
 		scribe_diverge(sp, _type, __VA_ARGS__);			\
@@ -536,6 +549,9 @@ struct scribe_ps {
 	struct task_struct *p;
 	struct scribe_queue *pre_alloc_queue;
 	struct scribe_queue *queue;
+	struct scribe_queue *mutations_queue;
+	struct scribe_queue _mutations_queue;
+	scribe_insert_point_t mutations_ip;
 
 	scribe_insert_point_t syscall_ip;
 	int in_syscall;
@@ -592,6 +608,10 @@ static inline int is_recording(struct scribe_ps *scribe)
 static inline int is_replaying(struct scribe_ps *scribe)
 {
 	return scribe != NULL && (scribe->flags & SCRIBE_PS_REPLAY);
+}
+static inline int is_mutating(struct scribe_ps *scribe)
+{
+	return scribe != NULL && (scribe->flags & SCRIBE_PS_MUTATING);
 }
 static inline int is_detaching(struct scribe_ps *scribe)
 {

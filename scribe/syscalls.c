@@ -205,7 +205,8 @@ diverge:
 		event.generic = scribe_dequeue_event(scribe->queue,
 						     SCRIBE_NO_WAIT);
 		scribe_free_event(event.generic);
-	}
+	} else
+		scribe_start_mutations(scribe);
 
 	scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
 			.nr = scribe->syscall.nr,
@@ -217,12 +218,15 @@ diverge:
 			.args[4] = scribe->syscall.args[4],
 			.args[5] = scribe->syscall.args[5]);
 
-	if (should_strict_replay(scribe)) {
+	if (should_strict_replay(scribe))
 		return -EDIVERGE;
-	}
 
-	scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
+	scribe_syscall_set_flags(scribe, SCRIBE_PS_ENABLE_DATA,
+				 SCRIBE_UNTIL_NEXT_SYSCALL);
 	scribe->orig_ret = 0;
+
+	scribe_need_syscall_ret_record(scribe);
+
 	return 0;
 }
 
@@ -450,12 +454,17 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	if (is_scribe_syscall(scribe->syscall.nr))
 		return;
 
+	if (!scribe->commit_sys_reset_flags || is_mutating(scribe)) {
+		scribe_commit_syscall(scribe, regs,
+				      syscall_get_return_value(current, regs));
+	}
+
+	if (is_mutating(scribe))
+		scribe_stop_mutations(scribe);
+
 	if (scribe->commit_sys_reset_flags) {
 		scribe_syscall_set_flags(scribe, scribe->commit_sys_reset_flags,
 				 SCRIBE_PERMANANT);
-	} else {
-		scribe_commit_syscall(scribe, regs,
-				      syscall_get_return_value(current, regs));
 	}
 
 	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);

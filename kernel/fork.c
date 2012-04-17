@@ -1009,6 +1009,9 @@ int init_scribe(struct task_struct *p, struct scribe_context *ctx,
 	if (!scribe->pre_alloc_queue)
 		goto err_exit_arch;
 
+	scribe->mutations_queue = &scribe->_mutations_queue;
+	scribe_init_queue(scribe->mutations_queue, NULL, 0);
+
 	scribe_init_signal(&scribe->signal);
 
 	scribe_resource_init_user(&scribe->resources);

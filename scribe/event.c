@@ -30,7 +30,7 @@ void scribe_init_stream(struct scribe_stream *stream)
 	stream->wait = &stream->default_wait;
 }
 
-static void init_queue(struct scribe_queue *queue,
+void scribe_init_queue(struct scribe_queue *queue,
 		       struct scribe_context *ctx, pid_t pid)
 {
 	/*
@@ -50,7 +50,7 @@ static void init_queue(struct scribe_queue *queue,
 	queue->num_ev_consumed = 0;
 }
 
-static void exit_queue(struct scribe_queue *queue)
+void scribe_exit_queue(struct scribe_queue *queue)
 {
 	int i;
 	scribe_free_all_events(&queue->stream);
@@ -68,6 +68,55 @@ static struct scribe_queue *find_queue(struct scribe_context *ctx, pid_t pid)
 			return queue;
 
 	return NULL;
+}
+
+void scribe_start_mutations(struct scribe_ps *scribe)
+{
+	int ret;
+
+	BUG_ON(!is_replaying(scribe));
+
+	scribe_create_insert_point(&scribe->mutations_ip,
+				   &scribe->ctx->notifications);
+
+	if (!scribe_is_queue_empty(scribe->mutations_queue))
+		scribe_kill(scribe->ctx, -EINVAL);
+
+	scribe->mutations_queue->num_ev_consumed = scribe->queue->num_ev_consumed;
+	scribe->mutations_queue->last_event_offset = scribe->queue->last_event_offset;
+
+	swap(scribe->queue, scribe->mutations_queue);
+	scribe->flags &= ~SCRIBE_PS_REPLAY;
+	scribe->flags |= SCRIBE_PS_RECORD | SCRIBE_PS_MUTATING;
+
+	ret = scribe_queue_new_event(scribe->queue, SCRIBE_EVENT_PID,
+				     .pid = scribe->queue->pid);
+	if (ret)
+		scribe_kill(scribe->ctx, ret);
+}
+
+static struct scribe_substream *get_substream(scribe_insert_point_t *ip);
+static void commit_pending_insert_points(struct scribe_stream *stream);
+void scribe_stop_mutations(struct scribe_ps *scribe)
+{
+	int ret;
+
+	BUG_ON(!is_mutating(scribe));
+
+	scribe->flags &= ~(SCRIBE_PS_RECORD | SCRIBE_PS_MUTATING);
+	scribe->flags |= SCRIBE_REPLAY;
+	swap(scribe->queue, scribe->mutations_queue);
+
+	commit_pending_insert_points(&scribe->mutations_queue->stream);
+	ret = scribe_queue_new_event(scribe->mutations_queue,
+				     SCRIBE_EVENT_QUEUE_EOF);
+	if (ret)
+		scribe_kill(scribe->ctx, ret);
+
+	scribe_queue_events_at(&scribe->mutations_ip,
+			       &scribe->mutations_queue->stream.master.events);
+
+	scribe_commit_insert_point(&scribe->mutations_ip);
 }
 
 /*
@@ -92,7 +141,7 @@ struct scribe_queue *scribe_get_queue_by_pid(
 	queue = *pre_alloc_queue;
 	*pre_alloc_queue = NULL;
 
-	init_queue(queue, ctx, pid);
+	scribe_init_queue(queue, ctx, pid);
 	if (ctx->queues_sealed)
 		queue->stream.sealed = 1;
 
@@ -122,7 +171,7 @@ void scribe_put_queue(struct scribe_queue *queue)
 		list_del(&queue->node);
 		spin_unlock(&ctx->queues_lock);
 		wake_up(&queue->ctx->queues_wait);
-		exit_queue(queue);
+		scribe_exit_queue(queue);
 		kfree(queue);
 	}
 }
@@ -132,7 +181,7 @@ void scribe_put_queue_locked(struct scribe_queue *queue)
 	if (atomic_dec_and_test(&queue->ref_cnt)) {
 		list_del(&queue->node);
 		wake_up(&queue->ctx->queues_wait);
-		exit_queue(queue);
+		scribe_exit_queue(queue);
 		kfree(queue);
 	}
 }
@@ -344,10 +393,16 @@ void scribe_queue_event(struct scribe_queue *queue, void *event)
 	scribe_queue_event_stream(&queue->stream, event);
 }
 
+void scribe_queue_events_at(scribe_insert_point_t *ip,
+			    struct list_head *events)
+{
+	scribe_queue_at(ip->stream, ip, NULL, events);
+}
+
 void scribe_queue_events_stream(struct scribe_stream *stream,
 				struct list_head *events)
 {
-	scribe_queue_at(stream, &stream->master, NULL, events);
+	scribe_queue_events_at(&stream->master, events);
 }
 
 static struct scribe_event *__scribe_peek_event(struct scribe_stream *stream,

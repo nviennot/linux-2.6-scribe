@@ -74,7 +74,7 @@ static void post_init_data_desc(struct scribe_ps *scribe,
 			((desc->flags & SCRIBE_DATA_STRING) &&
 			 should_scribe_data_string_always(scribe));
 	desc->do_info = desc->flags & SCRIBE_DATA_NEED_INFO;
-	desc->do_extra = should_scribe_data_extra(scribe);
+	desc->do_extra = should_scribe_data_extra(scribe) || is_mutating(scribe);
 	desc->do_zero = desc->flags & SCRIBE_DATA_ZERO;
 
 	if (desc->do_non_det)
