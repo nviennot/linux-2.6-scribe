@@ -217,7 +217,8 @@ diverge:
 		event.generic = scribe_dequeue_event(scribe->queue,
 						     SCRIBE_NO_WAIT);
 		scribe_free_event(event.generic);
-	} else
+	} else if (scribe->syscall.nr != __NR_exit &&
+		   scribe->syscall.nr != __NR_exit_group)
 		scribe_start_mutations(scribe);
 
 	scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_SYSCALL,
