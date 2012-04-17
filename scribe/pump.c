@@ -465,8 +465,6 @@ static ssize_t deserialize_events(struct scribe_context *ctx, const char *buf,
 			scribe_free_event(event);
 			if (err)
 				goto out;
-		} else if (event->type == SCRIBE_EVENT_NOP) {
-			scribe_free_event(event);
 		} else {
 			if (unlikely(!*current_queue)) {
 				err = -EINVAL;

@@ -64,6 +64,18 @@ void scribe_handle_custom_actions(struct scribe_ps *scribe)
 
 	event = scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
 	scribe_free_event(event);
+
+	for (;;) {
+		event = scribe_peek_event(scribe->queue, SCRIBE_WAIT);
+		if (IS_ERR(event))
+			break;
+
+		if (event->type != SCRIBE_EVENT_NOP)
+			break;
+
+		event = scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
+		scribe_free_event(event);
+	}
 }
 
 static int scribe_regs(struct scribe_ps *scribe, struct pt_regs *regs)
