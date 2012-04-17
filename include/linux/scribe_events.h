@@ -214,6 +214,10 @@ SCRIBE_EVENT_SIZED(set_flags,
 	__field(__u8, extra[0])
 )
 
+SCRIBE_EVENT_SIZED(nop,
+	__field(__u8, extra[0])
+)
+
 /* Command events */
 SCRIBE_START_COMMAND_DECL
 
