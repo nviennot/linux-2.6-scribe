@@ -252,7 +252,7 @@ static inline void data_copy_hook(struct data_copy_args *args,
 static inline void diverge_on_data(struct scribe_ps *scribe,
 				   const void *data, size_t count)
 {
-	scribe_mutation_hooked(scribe, &data_copy_hook,
+	scribe_diverge_hooked(scribe, &data_copy_hook,
 			       (&(struct data_copy_args){data, count}),
 			       SCRIBE_EVENT_DIVERGE_DATA_CONTENT);
 }
