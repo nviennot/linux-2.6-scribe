@@ -429,7 +429,7 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 	(struct##_type *)__event;					\
 })
 
-#define scribe_diverge(sp, _type, ...)					\
+#define scribe_diverge_hooked(sp, hook, _private,  _type, ...)		\
 ({									\
 	struct##_type *__event;						\
 	spin_lock(&(sp)->ctx->tasks_lock);				\
@@ -443,12 +443,16 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 			.h.last_event_offset = (sp)->queue->last_event_offset, \
 			__VA_ARGS__					\
 		};							\
+		(hook)((_private), __event);				\
 	}								\
 	__scribe_kill((sp)->ctx, (struct scribe_event *)__event);	\
 	spin_unlock(&(sp)->ctx->tasks_lock);				\
 })
 
-#define __scribe_mutation(sp, _type, ...)				\
+#define scribe_diverge(sp,  _type, ...) \
+	scribe_diverge_hooked(sp, &scribe_nop, NULL,  _type, __VA_ARGS__)
+
+#define __scribe_mutation(sp, hook, _private,  _type, ...)		\
 ({									\
 	struct##_type *__new_event;					\
 	int __ret = 0;							\
@@ -466,6 +470,7 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 			.h.last_event_offset = (sp)->queue->last_event_offset, \
 			__VA_ARGS__					\
 		};							\
+		(hook)((_private), __new_event);			\
 		scribe_queue_event_stream(&(sp)->ctx->notifications,	\
 					  __new_event);			\
 	}								\
@@ -473,13 +478,18 @@ extern void scribe_wake_all_fake_sig(struct scribe_context *ctx);
 })
 
 
-#define scribe_mutation(sp, _type, ...)				\
+#define scribe_mutation_hooked(sp, hook, _private,  _type, ...)		\
 ({									\
 	if (should_strict_replay((sp)))					\
-		scribe_diverge(sp, _type, __VA_ARGS__);			\
+		scribe_diverge_hooked(sp, hook, _private, _type, __VA_ARGS__);	\
 	else								\
-		__scribe_mutation(sp, _type, __VA_ARGS__);		\
+		__scribe_mutation(sp, hook, _private, _type, __VA_ARGS__);	\
 })
+
+static inline void scribe_nop(void *private, void *event) {}
+
+#define scribe_mutation(sp, _type, ...) \
+	scribe_mutation_hooked(sp, &scribe_nop, NULL, _type, __VA_ARGS__)
 
 /* Bookmarks */
 

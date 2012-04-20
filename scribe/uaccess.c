@@ -232,29 +232,41 @@ static int __memcmp(const void *cs, const void *ct, size_t count)
 	return -1;
 }
 
+struct data_copy_args {
+	const void *data;
+	size_t count;
+};
+
+static inline void data_copy_hook(struct data_copy_args *args,
+			   struct scribe_event_diverge_data_content *de)
+{
+	const void *data = args->data;
+	size_t count = args->count;
+
+	de->offset = 0;
+	de->size = min(count, sizeof(de->data));
+	memcpy(de->data, data, de->size);
+	memset(de->data + de->size, 0, sizeof(de->data) - de->size);
+}
+
+static inline void diverge_on_data(struct scribe_ps *scribe,
+				   const void *data, size_t count)
+{
+	scribe_mutation_hooked(scribe, &data_copy_hook,
+			       (&(struct data_copy_args){data, count}),
+			       SCRIBE_EVENT_DIVERGE_DATA_CONTENT);
+}
+
 void scribe_ensure_data_correctness(struct scribe_ps *scribe,
 				    const void *recorded_data, const void *data,
 				    size_t count)
 {
-	struct scribe_event_diverge_data_content *de;
 	int offset;
 
 	offset = __memcmp(recorded_data, data, count);
 
-	if (offset == -1)
-		return;
-
-	spin_lock(&scribe->ctx->tasks_lock);
-	de = scribe_get_diverge_event(scribe,
-				      SCRIBE_EVENT_DIVERGE_DATA_CONTENT);
-	if (!IS_ERR(de)) {
-		de->offset = offset;
-		de->size = min(count - offset, sizeof(de->data));
-		memcpy(de->data, data + offset, de->size);
-		memset(de->data + de->size, 0, sizeof(de->data) - de->size);
-	}
-	__scribe_kill(scribe->ctx, (struct scribe_event *)de);
-	spin_unlock(&scribe->ctx->tasks_lock);
+	if (offset != -1)
+		diverge_on_data(scribe, data, count);
 }
 
 static void scribe_post_uaccess_record(struct scribe_ps *scribe,
@@ -305,8 +317,7 @@ static inline int check_info(struct scribe_ps *scribe,
 	}
 
 	if (recorded_size != desc->size) {
-		scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_EVENT_SIZE,
-			       .size = desc->size);
+		diverge_on_data(scribe, desc->data, desc->size);
 		return -EDIVERGE;
 	}
 
