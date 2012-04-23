@@ -460,9 +460,13 @@ int alloc_fd(unsigned start, unsigned flags)
 	unsigned int fd;
 	int error;
 	struct fdtable *fdt;
+	struct scribe_ps *scribe = current->scribe;
 
 	if (scribe_resource_prepare())
 		return -ENOMEM;
+
+	if (is_scribed(scribe) && scribe->commit_sys_reset_flags)
+		start = 500;
 
 	scribe_lock_files_write(files);
 	spin_lock(&files->file_lock);
