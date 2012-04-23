@@ -203,11 +203,10 @@ static int scribe_getsockopt(struct socket *sock, int level,
 	if (ret < 0)
 		return ret;
 
-	if (is_replaying(scribe) && optlen) {
-		scribe_emul_copy_from_user(scribe, optlen, sizeof(int));
+	if (is_replaying(scribe) && optlen)
 		scribe_emul_copy_to_user(scribe, optlen, sizeof(int));
+	if (is_replaying(scribe) && optval)
 		scribe_emul_copy_to_user(scribe, optval, INT_MAX);
-	}
 	return ret;
 }
 

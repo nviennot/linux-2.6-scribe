@@ -201,6 +201,13 @@ extern struct scribe_event *scribe_peek_event_next(
 		if (IS_ERR(_event))					\
 			break;						\
 									\
+		/* Giant hack, let's fix that later */			\
+		if (_event->type == SCRIBE_EVENT_SYSCALL_END) {		\
+			_stop = true;					\
+			_event = ERR_PTR(-ENODATA);			\
+			break;						\
+		}							\
+									\
 		for (_i = 0; _i < ARRAY_SIZE(_types); _i++)		\
 			if (_event->type == _types[_i]) {		\
 				_stop = true;				\

@@ -425,7 +425,7 @@ static void __scribe_post_uaccess(struct scribe_ps *scribe,
 	else /* replay */ {
 		scribe_post_uaccess_replay(scribe, desc);
 
-		event = scribe_peek_event(scribe->queue, SCRIBE_NO_WAIT);
+		event = scribe_peek_event(scribe->queue, SCRIBE_WAIT);
 		WARN_ON(IS_ERR(event));
 		if (event == desc->event.generic)
 			scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
