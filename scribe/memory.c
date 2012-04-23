@@ -364,6 +364,11 @@ static void put_obj_ref(struct scribe_mm_context *mm_ctx, void *object)
 
 	ref = find_obj_ref(mm_ctx, object);
 
+	if (!ref) {
+		WARN(1, "object %p not found\n", object);
+		return;
+	}
+
 	if (atomic_dec_and_lock(&ref->counter, &mm_ctx->obj_refs_lock)) {
 		list_del(&ref->node);
 		spin_unlock(&mm_ctx->obj_refs_lock);
