@@ -69,6 +69,9 @@ static void post_init_data_desc(struct scribe_ps *scribe,
 	 * performed.
 	 */
 
+	if (desc->flags & SCRIBE_DATA_INPUT)
+		desc->flags &= ~SCRIBE_DATA_NON_DETERMINISTIC;
+
 	desc->do_non_det = desc->flags & SCRIBE_DATA_NON_DETERMINISTIC;
 	desc->do_det = should_scribe_data_always(scribe) ||
 			((desc->flags & SCRIBE_DATA_STRING) &&
