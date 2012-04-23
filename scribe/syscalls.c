@@ -161,6 +161,8 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 {
 	union scribe_syscall_event_union event;
 	int syscall_extra = should_scribe_syscall_extra(scribe);
+	unsigned long old_flags = 0;
+	int ret = 0;
 	int i;
 
 	/*
@@ -213,6 +215,14 @@ static int scribe_need_syscall_ret_replay(struct scribe_ps *scribe)
 	return 0;
 
 diverge:
+
+	if (scribe->syscall.nr == __NR_clone ||
+	    scribe->syscall.nr == __NR_fork ||
+	    scribe->syscall.nr == __NR_vfork) {
+		old_flags = scribe->flags;
+		scribe->flags |= SCRIBE_PS_STRICT_REPLAY;
+	}
+
 	if (should_strict_replay(scribe)) {
 		event.generic = scribe_dequeue_event(scribe->queue,
 						     SCRIBE_NO_WAIT);
@@ -231,8 +241,10 @@ diverge:
 			.args[4] = scribe->syscall.args[4],
 			.args[5] = scribe->syscall.args[5]);
 
-	if (should_strict_replay(scribe))
-		return -EDIVERGE;
+	if (should_strict_replay(scribe)) {
+		ret = -EDIVERGE;
+		goto out;
+	}
 
 	scribe_syscall_set_flags(scribe, SCRIBE_PS_ENABLE_DATA,
 				 SCRIBE_UNTIL_NEXT_SYSCALL);
@@ -240,7 +252,11 @@ diverge:
 
 	scribe_need_syscall_ret_record(scribe);
 
-	return 0;
+out:
+	if (old_flags)
+		scribe->flags = old_flags;
+
+	return ret;
 }
 
 static int __scribe_need_syscall_ret(struct scribe_ps *scribe)
