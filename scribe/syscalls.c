@@ -347,6 +347,16 @@ static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 	scribe->syscall.nr = get_nr_syscall(regs);
 	scribe->syscall.num_args = get_num_args(scribe->syscall.nr);
 
+	if (syscall_get_nr(current, regs) == __NR_socketcall) {
+		long base;
+		syscall_get_arguments(current, regs, 1, 1, &base);
+		scribe_data_ignore();
+		copy_from_user(scribe->syscall.args, (long __user *)base,
+			       scribe->syscall.num_args * sizeof(long));
+		scribe_data_det();
+		return;
+	}
+
 	syscall_get_arguments(current, regs, 0,
 			      scribe->syscall.num_args, scribe->syscall.args);
 }
