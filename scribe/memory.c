@@ -264,7 +264,6 @@ static struct scribe_ownership *add_page_ownership(struct scribe_page *page,
 
 #ifdef CONFIG_DEBUG_KERNEL
 	assert_spin_locked(&page->owners_lock);
-	BUG_ON(is_owned_by(page, owner));
 #endif
 
 	os = __alloc_ownership_struct(page);
