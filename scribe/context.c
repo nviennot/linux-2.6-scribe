@@ -308,8 +308,10 @@ void __scribe_kill(struct scribe_context *ctx, struct scribe_event *reason)
 		return;
 	}
 
+#if 0
 	if (reason)
 		dump_stack();
+#endif
 
 	/*
 	 * The SCRIBE_STATE_MASK flags has to be clear here (as opposed to
