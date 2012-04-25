@@ -1033,7 +1033,12 @@ static void scribe_do_exit(struct task_struct *p, long code)
 	 * If we are in a syscall, we need to record the end of the syscall
 	 * properly (it's going to be sys_exit_group()).
 	 */
-	scribe_commit_syscall(scribe, task_pt_regs(p), code);
+	if (!scribe->commit_sys_reset_flags || is_mutating(scribe))
+		scribe_commit_syscall(scribe, task_pt_regs(p), code);
+
+	if (is_mutating(scribe))
+		scribe_stop_mutations(scribe);
+
 	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);
 
 	if (is_replaying(scribe) &&

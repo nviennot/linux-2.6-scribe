@@ -22,9 +22,9 @@ union scribe_syscall_event_union {
 	struct scribe_event_syscall_extra *extra;
 };
 
-static void scribe_syscall_set_flags(struct scribe_ps *scribe,
-				     unsigned long flags,
-				     int duration)
+void scribe_syscall_set_flags(struct scribe_ps *scribe,
+			      unsigned long flags,
+			      int duration)
 {
 	if (duration == SCRIBE_UNTIL_NEXT_SYSCALL) {
 		scribe->commit_sys_reset_flags = scribe->flags;

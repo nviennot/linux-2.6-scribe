@@ -871,6 +871,9 @@ extern void scribe_backtrace_add(struct scribe_backtrace *bt,
 extern void scribe_backtrace_dump(struct scribe_backtrace *bt,
 				  struct scribe_stream *stream);
 
+extern void scribe_syscall_set_flags(struct scribe_ps *scribe,
+				     unsigned long flags,
+				     int duration);
 extern void scribe_handle_custom_actions(struct scribe_ps *scribe);
 extern int scribe_need_syscall_ret(struct scribe_ps *scribe);
 extern void scribe_enter_syscall(struct pt_regs *regs);
