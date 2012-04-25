@@ -472,8 +472,11 @@ static struct scribe_page *get_scribe_page(struct scribe_mm_context *mm_ctx,
 	return page;
 }
 
+#define DONT_CLEAR_PTE (struct vm_area_struct *)(-1)
 static void scribe_make_page_public(struct scribe_ownership *os,
-				    int write_access);
+				    int write_access,
+				    struct vm_area_struct *vma);
+
 static void __scribe_page_release_ownership(struct scribe_ps *scribe,
 					    void *key_object)
 {
@@ -500,7 +503,7 @@ static void __scribe_page_release_ownership(struct scribe_ps *scribe,
 					list_del_init(&os->req_node);
 				spin_unlock(&scribe->mm->req_lock);
 
-				scribe_make_page_public(os, 1);
+				scribe_make_page_public(os, 1, DONT_CLEAR_PTE);
 			}
 			spin_unlock(&page->owners_lock);
 		}
@@ -559,7 +562,6 @@ static void remove_pages_of(struct scribe_mm_context *mm_ctx, void *key_object)
 static void get_page_key(struct vm_area_struct *vma, unsigned long address,
 			 struct scribe_page_key *key)
 {
-
 	if (vma->vm_flags & VM_SHARED) {
 		key->object = vma->vm_file->f_dentry->d_inode;
 		key->offset = (address - vma->vm_start) >> PAGE_SHIFT;
@@ -947,12 +949,13 @@ static inline int increment_serial(struct scribe_page *page)
 }
 
 static void scribe_make_page_public(struct scribe_ownership *os,
-				    int write_access)
+				    int write_access,
+				    struct vm_area_struct *vma)
+
 {
 	struct scribe_page *page;
 	struct scribe_ps *scribe;
 	struct mm_struct *mm;
-	struct vm_area_struct *vma;
 	unsigned long virt_address;
 
 	page = os->page;
@@ -975,15 +978,22 @@ static void scribe_make_page_public(struct scribe_ownership *os,
 			page->write_access = 0;
 	}
 
-	/* Now we have to clear the owner's pte (the page is now public) */
-	mm = scribe->p->mm;
+	if (vma == DONT_CLEAR_PTE)
+		return;
 
 	/*
-	 * FIXME find a way to lock mm->mmap_sem (for find_vma()), maybe the
-	 * owner is not sharing our memory mapping.
+	 * Now we have to clear the owner's pte  (the page is now public)
 	 */
-	vma = find_vma(mm, virt_address);
-	BUG_ON(!vma);
+
+	mm = scribe->p->mm;
+	if (!vma) {
+		/*
+		 * FIXME find a way to lock mm->mmap_sem (for find_vma()),
+		 * maybe the owner is not sharing our memory mapping.
+		 */
+		vma = find_vma(mm, virt_address);
+		BUG_ON(!vma);
+	}
 	update_private_pte(scribe, mm, vma, virt_address, write_access);
 }
 
@@ -1009,7 +1019,7 @@ static void scribe_make_page_public_log(struct scribe_ownership *os,
 				      public_event);
 	else
 		scribe_queue_event(os->owner->queue, public_event);
-	scribe_make_page_public(os, write_access);
+	scribe_make_page_public(os, write_access, NULL);
 }
 
 static int scribe_make_page_owned_log(struct scribe_ps *scribe,
@@ -1366,7 +1376,7 @@ static int scribe_handle_public_event(struct scribe_ps *scribe,
 	spin_lock(&page->owners_lock);
 	os = find_ownership(page, scribe);
 	if (likely(os)) {
-		scribe_make_page_public(os, rw_flag);
+		scribe_make_page_public(os, rw_flag, vma);
 		ret = 0;
 	} else {
 		scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_MEM_NOT_OWNED);
@@ -1877,6 +1887,15 @@ set_pte:
 
 /******************************************************************************/
 
+static struct scribe_ps *get_scribe_from_mm(struct mm_struct *mm)
+{
+	struct task_struct *p = mm->owner;
+
+	if (!p)
+		return NULL;
+	return p->scribe;
+}
+
 void scribe_add_vma(struct vm_area_struct *vma)
 {
 }
@@ -1888,8 +1907,57 @@ void scribe_remove_vma(struct vm_area_struct *vma)
 	 * since we don't take any synchronization lock on a page fault,
 	 * we cannot reset the serial number of the pages to free some memory.
 	 * For anonymous pages:
-	 * - We'll be able to free some memory when we'll be alone
+	 * - We'll be able to free the actual page when we'll be alone
 	 * For shared pages:
 	 * - We need to free the memory pages once the inode goes away
+	 *
+	 * But it both cases, we'll have to cleanup the ownerships without
+	 * logging it, since this is deterministic.
+	 * As a first cut we'll just do VM_SHARED pages.
 	 */
+
+	struct scribe_page_key key;
+	struct scribe_page *page;
+	struct page_hash_bucket *hb;
+	struct scribe_mm *scribe_mm;
+	struct scribe_ownership *os;
+	struct mm_struct *mm = vma->vm_mm;
+	struct scribe_ps *scribe = get_scribe_from_mm(mm);
+	struct scribe_mm_context *mm_ctx;
+	unsigned long addr;
+
+	if (!should_handle_mm(scribe))
+		return;
+
+	if (!(vma->vm_flags & VM_SHARED))
+		return;
+
+	mm_ctx = scribe->ctx->mm_ctx;
+
+	rcu_read_lock();
+	for (addr = vma->vm_start; addr < vma->vm_end; addr += PAGE_SIZE) {
+		get_page_key(vma, addr, &key);
+		hb = get_page_hash_bucket(mm_ctx, &key);
+		page = __find_scribe_page(hb, &key);
+
+		if (!page)
+			continue;
+
+		spin_lock(&mm->scribe_lock);
+		list_for_each_entry(scribe_mm, &mm->scribe_list, node) {
+			spin_lock(&page->owners_lock);
+			os = find_ownership(page, scribe_mm->scribe);
+			if (os) {
+				spin_lock(&scribe_mm->req_lock);
+				if (!list_empty(&os->req_node))
+					list_del_init(&os->req_node);
+				spin_unlock(&scribe_mm->req_lock);
+
+				scribe_make_page_public(os, 1, DONT_CLEAR_PTE);
+			}
+			spin_unlock(&page->owners_lock);
+		}
+		spin_unlock(&mm->scribe_lock);
+	}
+	rcu_read_unlock();
 }
