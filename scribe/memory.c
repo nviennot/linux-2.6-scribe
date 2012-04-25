@@ -37,16 +37,6 @@
  * When the counter hits 0, scribe_page_remove(object, OFFSET_ALL) is called
  * to clean the scribe_pages.
  */
-struct scribe_obj_ref {
-	struct list_head	node;
-	void			*object;
-	atomic_t		counter;
-
-	/* unsed only when object is a mm_struct. It is locked by the
-	 * underlying mm->mmap_sem. It allows iterating trough scribetasks
-	 */
-	struct list_head	mm_list;
-};
 
 #define SCRIBE_PAGE_HASH_BITS	14
 #define SCRIBE_PAGE_HASH_SIZE	(1 << SCRIBE_PAGE_HASH_BITS)
@@ -297,115 +287,22 @@ static void rm_page_ownership(struct scribe_ownership *os)
     Object referencing (mm_struct and inodes)
 *********************************************************/
 
-static struct scribe_obj_ref * __find_obj_ref(struct scribe_mm_context *mm_ctx,
-					      void *object)
-{
-	struct scribe_obj_ref *ref;
-
-	list_for_each_entry(ref, &mm_ctx->obj_refs, node) {
-		if (ref->object == object)
-			return ref;
-	}
-
-	return NULL;
-}
-
-static struct scribe_obj_ref *find_obj_ref(struct scribe_mm_context *mm_ctx,
-					   void *object)
-{
-	struct scribe_obj_ref *ref;
-
-	spin_lock(&mm_ctx->obj_refs_lock);
-	ref = __find_obj_ref(mm_ctx, object);
-	spin_unlock(&mm_ctx->obj_refs_lock);
-
-	return ref;
-}
-
-static struct scribe_obj_ref *get_obj_ref(struct scribe_mm_context *mm_ctx,
-					  void *object)
-{
-	struct scribe_obj_ref *ref, *ref_alloc;
-
-	spin_lock(&mm_ctx->obj_refs_lock);
-	ref = __find_obj_ref(mm_ctx, object);
-	if (!ref) {
-		spin_unlock(&mm_ctx->obj_refs_lock);
-		ref_alloc = (struct scribe_obj_ref *)
-				kmalloc(sizeof(*ref), GFP_KERNEL);
-		if (!ref_alloc)
-			return ERR_PTR(-ENOMEM);
-		spin_lock(&mm_ctx->obj_refs_lock);
-
-		/* raced ? */
-		ref = __find_obj_ref(mm_ctx, object);
-		if (ref)
-			kfree(ref_alloc);
-		else {
-			ref = ref_alloc;
-			ref->object = object;
-			atomic_set(&ref->counter, 0);
-			INIT_LIST_HEAD(&ref->mm_list);
-			list_add(&ref->node, &mm_ctx->obj_refs);
-		}
-	}
-
-	atomic_inc(&ref->counter);
-	spin_unlock(&mm_ctx->obj_refs_lock);
-	return ref;
-}
-
+#define ALL_KEYS ((void *)-1)
 static void remove_pages_of(struct scribe_mm_context *mm_ctx, void *key_object);
 
-static void put_obj_ref(struct scribe_mm_context *mm_ctx, void *object)
+void scribe_exit_mem_inode(struct inode *inode)
 {
-	struct scribe_obj_ref *ref;
+	struct scribe_context *ctx;
 
-	ref = find_obj_ref(mm_ctx, object);
+	/*
+	 * XXX XXX TODO
+	 * Huge performance hit
+	 */
 
-	if (!ref) {
-		WARN(1, "object %p not found\n", object);
-		return;
-	}
-
-	if (atomic_dec_and_lock(&ref->counter, &mm_ctx->obj_refs_lock)) {
-		list_del(&ref->node);
-		spin_unlock(&mm_ctx->obj_refs_lock);
-
-		remove_pages_of(mm_ctx, ref->object);
-		kfree(ref);
-	}
-}
-
-static int get_all_objects(struct scribe_mm_context *mm_ctx,
-			   struct mm_struct *mm)
-{
-	struct scribe_obj_ref *ref;
-	struct vm_area_struct *vma;
-
-	for (vma = mm->mmap; vma; vma = vma->vm_next) {
-		if (!(vma->vm_flags & VM_SHARED))
-			continue;
-
-		ref = get_obj_ref(mm_ctx, vma->vm_file->f_dentry->d_inode);
-		if (IS_ERR(ref)) {
-			WARN_ON(1); /* FIXME do the proper cleaning */
-			return PTR_ERR(ref);
-		}
-	}
-
-	return 0;
-}
-
-static void put_all_objects(struct scribe_mm_context *mm_ctx,
-			    struct mm_struct *mm)
-{
-	struct vm_area_struct *vma;
-
-	for (vma = mm->mmap; vma; vma = vma->vm_next) {
-		if (vma->vm_flags & VM_SHARED)
-			put_obj_ref(mm_ctx, vma->vm_file->f_dentry->d_inode);
-	}
+	spin_lock(&scribe_active_contexts_lock);
+	list_for_each_entry(ctx, &scribe_active_contexts, active_node)
+		remove_pages_of(ctx->mm_ctx, inode);
+	spin_unlock(&scribe_active_contexts_lock);
 }
 
 static int get_scribe_cnt(struct mm_struct *mm)
@@ -448,36 +345,21 @@ static void rm_shadow_mm(struct scribe_mm *scribe_mm, struct mm_struct *mm)
 	cnt = __rm_shadow_mm(scribe_mm, mm);
 	if (!cnt) {
 		mm_ctx = scribe_mm->scribe->ctx->mm_ctx;
-		down_read(&mm->mmap_sem);
-		put_all_objects(mm_ctx, mm);
-		up_read(&mm->mmap_sem);
-
 		remove_pages_of(mm_ctx, mm);
 	}
 }
 
-static int add_shadow_mm(struct scribe_mm *scribe_mm, struct mm_struct *mm)
+static void add_shadow_mm(struct scribe_mm *scribe_mm, struct mm_struct *mm)
 {
-	struct scribe_mm_context *mm_ctx;
-	int cnt, ret = 0;
-
 	down_write(&mm->mmap_sem);
 
 	spin_lock(&mm->scribe_lock);
 	list_add(&scribe_mm->node, &mm->scribe_list);
-	cnt = mm->scribe_cnt++;
+	mm->scribe_cnt++;
 	spin_unlock(&mm->scribe_lock);
 	wake_up(&mm->scribe_wait);
 
-	if (!cnt) {
-		mm_ctx = scribe_mm->scribe->ctx->mm_ctx;
-		ret = get_all_objects(mm_ctx, mm);
-		if (ret < 0)
-			__rm_shadow_mm(scribe_mm, mm);
-	}
-
 	up_write(&mm->mmap_sem);
-	return ret;
 }
 
 /********************************************************
@@ -512,16 +394,7 @@ struct scribe_mm_context *scribe_alloc_mm_context(void)
 
 void scribe_free_mm_context(struct scribe_mm_context *mm_ctx)
 {
-#ifdef CONFIG_DEBUG_KERNEL
-	struct page_hash_bucket *hb;
-	int i;
-
-	for (i = 0; i < SCRIBE_PAGE_HASH_SIZE; i++) {
-		hb = &mm_ctx->buckets[i];
-		WARN_ON(!hlist_empty(&hb->pages));
-	}
-#endif
-
+	remove_pages_of(mm_ctx, ALL_KEYS);
 	kfree(mm_ctx);
 }
 
@@ -615,7 +488,8 @@ static void __scribe_page_release_ownership(struct scribe_ps *scribe,
 	for (i = 0; i < SCRIBE_PAGE_HASH_SIZE; i++) {
 		hb = &mm_ctx->buckets[i];
 		hlist_for_each_entry_rcu(page, node, &hb->pages, node) {
-			if (page->key.object != key_object)
+			if (!(page->key.object == key_object ||
+			    key_object == ALL_KEYS))
 				continue;
 
 			spin_lock(&page->owners_lock);
@@ -636,25 +510,17 @@ static void __scribe_page_release_ownership(struct scribe_ps *scribe,
 
 #define ALL_PAGES 0
 #define ONLY_ANONYMOUS_PAGES 1
-static void scribe_page_release_ownership(struct scribe_ps *scribe,
-					  int only_anonymous_pages)
+static void scribe_page_release_ownership(struct scribe_ps *scribe, int whence)
 {
-	struct mm_struct *mm;
-	struct vm_area_struct *vma;
-	void *object;
-
-	mm = scribe->p->mm;
-
-	__scribe_page_release_ownership(scribe, mm);
-
-	if (only_anonymous_pages == ONLY_ANONYMOUS_PAGES)
-		return;
-
-	for (vma = mm->mmap; vma; vma = vma->vm_next) {
-		if (vma->vm_flags & VM_SHARED) {
-			object = vma->vm_file->f_dentry->d_inode;
-			__scribe_page_release_ownership(scribe, object);
-		}
+	switch (whence) {
+	case ALL_PAGES:
+		__scribe_page_release_ownership(scribe, ALL_KEYS);
+		break;
+	case ONLY_ANONYMOUS_PAGES:
+		__scribe_page_release_ownership(scribe, scribe->p->mm);
+		break;
+	default:
+		BUG();
 	}
 }
 
@@ -680,11 +546,11 @@ static void remove_pages_of(struct scribe_mm_context *mm_ctx, void *key_object)
 		hb = &mm_ctx->buckets[i];
 		spin_lock(&hb->lock);
 		hlist_for_each_entry_safe(page, node, tmp, &hb->pages, node) {
-			if (page->key.object != key_object)
-				continue;
-
-			hlist_del_rcu(&page->node);
-			call_rcu(&page->rcu, free_rcu_page);
+			if (page->key.object == key_object ||
+			    key_object == ALL_KEYS) {
+				hlist_del_rcu(&page->node);
+				call_rcu(&page->rcu, free_rcu_page);
+			}
 		}
 		spin_unlock(&hb->lock);
 	}
@@ -834,15 +700,6 @@ static void update_private_pte_locked(struct scribe_mm *scribe_mm,
 	pte_unmap_nested2(own_pte);
 }
 
-static struct scribe_ps *get_scribe_from_mm(struct mm_struct *mm)
-{
-	struct task_struct *p = mm->owner;
-
-	if (!p)
-		return NULL;
-	return p->scribe;
-}
-
 void scribe_clear_shadow_pte_locked(struct mm_struct *mm,
 				    struct vm_area_struct *vma,
 				    pte_t *real_pte, unsigned long addr)
@@ -989,7 +846,6 @@ int scribe_mem_init_st(struct scribe_ps *scribe)
 {
 	struct scribe_mm *scribe_mm;
 	struct mm_struct *mm = scribe->p->mm;
-	int ret;
 
 	if (scribe_mm_disabled(scribe))
 		return 0;
@@ -998,11 +854,7 @@ int scribe_mem_init_st(struct scribe_ps *scribe)
 	if (!scribe_mm)
 		return -ENOMEM;
 
-	ret = add_shadow_mm(scribe_mm, mm);
-	if (ret < 0) {
-		free_scribe_mm(scribe_mm, mm);
-		return ret;
-	}
+	add_shadow_mm(scribe_mm, mm);
 	scribe_mm->is_alone = !is_sharing_mm(mm);
 
 	/*
@@ -2027,44 +1879,17 @@ set_pte:
 
 void scribe_add_vma(struct vm_area_struct *vma)
 {
-	struct scribe_ps *scribe = get_scribe_from_mm(vma->vm_mm);
-	struct scribe_obj_ref *ref;
-	void *object;
-
-	if (!should_handle_mm(scribe))
-		return;
-
-	if (!(vma->vm_flags & VM_SHARED))
-		return;
-
-	/*
-	 * When a new shared memory region appears, we want to get a reference
-	 * on the file.
-	 */
-
-	object = vma->vm_file->f_dentry->d_inode;
-	ref = get_obj_ref(scribe->ctx->mm_ctx, object);
-
-	WARN(IS_ERR(ref), "Cannot get_obj_ref()\n");
 }
 
 void scribe_remove_vma(struct vm_area_struct *vma)
 {
-	struct mm_struct *mm = vma->vm_mm;
-	struct scribe_ps *scribe = get_scribe_from_mm(mm);
-
-	if (!should_handle_mm(scribe))
-		return;
-
-	if (vma->vm_flags & VM_SHARED) {
-		put_obj_ref(scribe->ctx->mm_ctx,
-			    vma->vm_file->f_dentry->d_inode);
-	}
-
 	/*
 	 * We don't want to remove any pages. It may suck some memory, but
 	 * since we don't take any synchronization lock on a page fault,
 	 * we cannot reset the serial number of the pages to free some memory.
-	 * We'll be able to free some memory when we'll be alone
+	 * For anonymous pages:
+	 * - We'll be able to free some memory when we'll be alone
+	 * For shared pages:
+	 * - We need to free the memory pages once the inode goes away
 	 */
 }

@@ -25,6 +25,7 @@
 #include <linux/mount.h>
 #include <linux/async.h>
 #include <linux/posix_acl.h>
+#include <linux/scribe.h>
 
 /*
  * This is needed for the following functions:
@@ -1372,6 +1373,7 @@ static inline void iput_final(struct inode *inode)
 
 #ifdef CONFIG_SCRIBE
 	scribe_exit_res_map(&inode->i_scribe_resource);
+	scribe_exit_mem_inode(inode);
 #endif
 
 	if (op && op->drop_inode)

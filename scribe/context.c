@@ -13,6 +13,9 @@
 #include <linux/nsproxy.h>
 #include <linux/scribe.h>
 
+LIST_HEAD(scribe_active_contexts);
+DEFINE_SPINLOCK(scribe_active_contexts_lock);
+
 struct scribe_context *scribe_alloc_context(void)
 {
 	struct scribe_context *ctx;
@@ -21,6 +24,7 @@ struct scribe_context *scribe_alloc_context(void)
 	if (!ctx)
 		return NULL;
 
+	INIT_LIST_HEAD(&ctx->active_node);
 	atomic_set(&ctx->ref_cnt, 1);
 	ctx->id = current->pid;
 	ctx->flags = 0;
@@ -91,6 +95,7 @@ void scribe_free_context(struct scribe_context *ctx)
 	scribe_kill(ctx, 0);
 	wait_for_ctx_empty(ctx);
 
+	BUG_ON(!list_empty(&ctx->active_node));
 	scribe_free_all_events(&ctx->notifications);
 	scribe_free_mm_context(ctx->mm_ctx);
 	scribe_free_res_context(ctx->res_ctx);
@@ -171,6 +176,10 @@ static int context_start(struct scribe_context *ctx, unsigned long flags,
 	clear_nsproxies(ctx); /* cleanup from a previous run */
 	setup_monitor_nsproxy(ctx);
 
+	spin_lock(&scribe_active_contexts_lock);
+	list_add(&ctx->active_node, &scribe_active_contexts);
+	spin_unlock(&scribe_active_contexts_lock);
+
 	return 0;
 }
 
@@ -191,6 +200,10 @@ static void context_idle(struct scribe_context *ctx,
 	unsigned long flags;
 
 	assert_spin_locked(&ctx->tasks_lock);
+
+	spin_lock(&scribe_active_contexts_lock);
+	list_del_init(&ctx->active_node);
+	spin_unlock(&scribe_active_contexts_lock);
 
 	if (ctx->flags & SCRIBE_REPLAY) {
 		spin_lock(&ctx->queues_lock);

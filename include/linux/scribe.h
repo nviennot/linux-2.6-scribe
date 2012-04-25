@@ -349,6 +349,7 @@ extern int scribe_pump_wait_completion_interruptible(struct scribe_pump *pump);
 /* Context */
 
 struct scribe_context {
+	struct list_head active_node;
 	atomic_t ref_cnt;
 	int id;
 	int flags;
@@ -385,6 +386,9 @@ struct scribe_context {
 
 	struct scribe_mm_context *mm_ctx;
 };
+
+extern struct list_head scribe_active_contexts;
+extern spinlock_t scribe_active_contexts_lock;
 
 static inline void scribe_get_context(struct scribe_context *ctx)
 {
@@ -890,9 +894,8 @@ extern int is_kernel_copy(void);
 
 extern struct scribe_mm_context *scribe_alloc_mm_context(void);
 extern void scribe_free_mm_context(struct scribe_mm_context *mm_ctx);
-
+extern void scribe_exit_mem_inode(struct inode *inode);
 extern int scribe_mem_init_st(struct scribe_ps *scribe);
-
 extern void scribe_mem_exit_st(struct scribe_ps *scribe);
 extern void scribe_mem_sync_point(struct scribe_ps *scribe, int mode);
 extern void scribe_disable_sync_sleep(void);
