@@ -141,7 +141,6 @@ static void release_res_inode(struct scribe_resource *res, bool *lock_dropped)
 {
 	struct scribe_context *ctx = res->ctx;
 	struct inode *inode = __get_inode_from_res(res);
-	struct super_block *sb = inode->i_sb;
 
 	release_mres(res, NULL);
 	spin_unlock_bh(&ctx->res_ctx->lock);
