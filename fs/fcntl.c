@@ -449,6 +449,14 @@ cmd_with_lock_inode:
 	case F_SETLKW:
 		err = fcntl_setlk(fd, filp, cmd, (struct flock __user *) arg);
 		break;
+	case F_GETLK64:
+		err = fcntl_getlk64(filp, (struct flock64 __user *) arg);
+		break;
+	case F_SETLK64:
+	case F_SETLKW64:
+		err = fcntl_setlk64(fd, filp, cmd,
+				(struct flock64 __user *) arg);
+		break;
 	case F_GETLEASE:
 		err = fcntl_getlease(filp);
 		break;
@@ -502,6 +510,9 @@ SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,
 	struct file * filp;
 	long err;
 
+	if (scribe_resource_prepare())
+		return -ENOMEM;
+
 	err = -EBADF;
 	filp = fget(fd);
 	if (!filp)
@@ -515,6 +526,9 @@ SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,
 	err = -EBADF;
 	
 	switch (cmd) {
+		/*
+		 * Moving all that to fcntl to perform locking:
+
 		case F_GETLK64:
 			err = fcntl_getlk64(filp, (struct flock64 __user *) arg);
 			break;
@@ -523,6 +537,7 @@ SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,
 			err = fcntl_setlk64(fd, filp, cmd,
 					(struct flock64 __user *) arg);
 			break;
+		*/
 		default:
 			err = do_fcntl(fd, cmd, arg, filp);
 			break;

@@ -1040,7 +1040,14 @@ int posix_lock_file_wait(struct file *filp, struct file_lock *fl)
 		error = posix_lock_file(filp, fl, NULL);
 		if (error != FILE_LOCK_DEFERRED)
 			break;
+
+		/* Following the same order as in fcntl() */
+		scribe_unlock_discard(filp->f_path.dentry->d_inode);
+		scribe_unlock_discard(filp);
 		error = wait_event_interruptible(fl->fl_wait, !fl->fl_next);
+		scribe_lock_file_no_inode(filp);
+		scribe_lock_inode_write(filp->f_path.dentry->d_inode);
+
 		if (!error)
 			continue;
 
@@ -1754,7 +1761,14 @@ static int do_lock_file_wait(struct file *filp, unsigned int cmd,
 		error = vfs_lock_file(filp, cmd, fl, NULL);
 		if (error != FILE_LOCK_DEFERRED)
 			break;
+
+		/* Following the same order as in fcntl() */
+		scribe_unlock_discard(filp->f_path.dentry->d_inode);
+		scribe_unlock_discard(filp);
 		error = wait_event_interruptible(fl->fl_wait, !fl->fl_next);
+		scribe_lock_file_no_inode(filp);
+		scribe_lock_inode_write(filp->f_path.dentry->d_inode);
+
 		if (!error)
 			continue;
 
