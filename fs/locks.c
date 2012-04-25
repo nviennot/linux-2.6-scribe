@@ -127,6 +127,7 @@
 #include <linux/time.h>
 #include <linux/rcupdate.h>
 #include <linux/pid_namespace.h>
+#include <linux/scribe.h>
 
 #include <asm/uaccess.h>
 
@@ -1035,6 +1036,7 @@ EXPORT_SYMBOL(posix_lock_file);
 int posix_lock_file_wait(struct file *filp, struct file_lock *fl)
 {
 	int error;
+	struct scribe_ps *scribe = current->scribe;
 	might_sleep ();
 	for (;;) {
 		error = posix_lock_file(filp, fl, NULL);
@@ -1042,11 +1044,15 @@ int posix_lock_file_wait(struct file *filp, struct file_lock *fl)
 			break;
 
 		/* Following the same order as in fcntl() */
-		scribe_unlock_discard(filp->f_path.dentry->d_inode);
-		scribe_unlock_discard(filp);
+		if (is_recording(scribe)) {
+			scribe_unlock_discard(filp->f_path.dentry->d_inode);
+			scribe_unlock_discard(filp);
+		}
 		error = wait_event_interruptible(fl->fl_wait, !fl->fl_next);
-		scribe_lock_file_no_inode(filp);
-		scribe_lock_inode_write(filp->f_path.dentry->d_inode);
+		if (is_recording(scribe)) {
+			scribe_lock_file_no_inode(filp);
+			scribe_lock_inode_write(filp->f_path.dentry->d_inode);
+		}
 
 		if (!error)
 			continue;
@@ -1751,6 +1757,7 @@ EXPORT_SYMBOL_GPL(vfs_lock_file);
 static int do_lock_file_wait(struct file *filp, unsigned int cmd,
 			     struct file_lock *fl)
 {
+	struct scribe_ps *scribe = current->scribe;
 	int error;
 
 	error = security_file_lock(filp, fl->fl_type);
@@ -1763,11 +1770,15 @@ static int do_lock_file_wait(struct file *filp, unsigned int cmd,
 			break;
 
 		/* Following the same order as in fcntl() */
-		scribe_unlock_discard(filp->f_path.dentry->d_inode);
-		scribe_unlock_discard(filp);
+		if (is_recording(scribe)) {
+			scribe_unlock_discard(filp->f_path.dentry->d_inode);
+			scribe_unlock_discard(filp);
+		}
 		error = wait_event_interruptible(fl->fl_wait, !fl->fl_next);
-		scribe_lock_file_no_inode(filp);
-		scribe_lock_inode_write(filp->f_path.dentry->d_inode);
+		if (is_recording(scribe)) {
+			scribe_lock_file_no_inode(filp);
+			scribe_lock_inode_write(filp->f_path.dentry->d_inode);
+		}
 
 		if (!error)
 			continue;
