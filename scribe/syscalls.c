@@ -348,14 +348,22 @@ static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 		long base;
 		syscall_get_arguments(current, regs, 1, 1, &base);
 		scribe_data_ignore();
-		copy_from_user(scribe->syscall.args, (long __user *)base,
+		if (copy_from_user(scribe->syscall.args, (long __user *)base,
+				   scribe->syscall.num_args * sizeof(long))) {
+			memset(scribe->syscall.args, -1,
 			       scribe->syscall.num_args * sizeof(long));
+		}
 		scribe_data_det();
 		return;
 	}
 
 	syscall_get_arguments(current, regs, 0,
 			      scribe->syscall.num_args, scribe->syscall.args);
+
+	if (scribe->syscall.nr == __NR_open) {
+		if (!(scribe->syscall.args[1] & O_CREAT))
+			scribe->syscall.num_args = 2;
+	}
 }
 
 void scribe_enter_syscall(struct pt_regs *regs)
