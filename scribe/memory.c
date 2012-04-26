@@ -24,23 +24,8 @@
 
 /* TODO heavy reformatting and documentation needed */
 
-/* We don't want to have the ref counter in the scribe_page struct
- * since it may not even exist (the scribe_page structs are allocated on demand).
- * Thoses ref_cnt structs are kept in a per monitor list (ctx->mem_list).
- * Reference counters are needed on mm_structs and inodes (FIXME It's dirty,
- * separate structures should be used):
- * - the mm_struct ref counter is used to determine if a task is operating in
- *   single or multithreaded (Can't use the mm->mm_users counter properly).
- * - the inode counter represents the number of scribed task using that
- *   file mapping (it's per monitor). The counter is incremented per mm_struct
- *   and not per task.
- * When the counter hits 0, scribe_page_remove(object, OFFSET_ALL) is called
- * to clean the scribe_pages.
- */
-
 #define SCRIBE_PAGE_HASH_BITS	14
 #define SCRIBE_PAGE_HASH_SIZE	(1 << SCRIBE_PAGE_HASH_BITS)
-
 
 /* SHOULD NOT BE BIGGER THAN 31 */
 #define SCRIBE_OWNERS_ARRAY_SIZE	4
@@ -472,6 +457,14 @@ static struct scribe_page *get_scribe_page(struct scribe_mm_context *mm_ctx,
 	return page;
 }
 
+static inline bool page_key_eq(struct scribe_page_key *key1,
+			       struct scribe_page_key *key2)
+{
+	if (key1 == key2)
+		return true;
+	return key1 == ALL_KEYS || key2 == ALL_KEYS;
+}
+
 #define DONT_CLEAR_PTE (struct vm_area_struct *)(-1)
 static void scribe_make_page_public(struct scribe_ownership *os,
 				    int write_access,
@@ -491,8 +484,7 @@ static void __scribe_page_release_ownership(struct scribe_ps *scribe,
 	for (i = 0; i < SCRIBE_PAGE_HASH_SIZE; i++) {
 		hb = &mm_ctx->buckets[i];
 		hlist_for_each_entry_rcu(page, node, &hb->pages, node) {
-			if (!(page->key.object == key_object ||
-			    key_object == ALL_KEYS))
+			if (!page_key_eq(&page->key, key_object))
 				continue;
 
 			spin_lock(&page->owners_lock);
@@ -549,11 +541,11 @@ static void remove_pages_of(struct scribe_mm_context *mm_ctx, void *key_object)
 		hb = &mm_ctx->buckets[i];
 		spin_lock(&hb->lock);
 		hlist_for_each_entry_safe(page, node, tmp, &hb->pages, node) {
-			if (page->key.object == key_object ||
-			    key_object == ALL_KEYS) {
-				hlist_del_rcu(&page->node);
-				call_rcu(&page->rcu, free_rcu_page);
-			}
+			if (!page_key_eq(&page->key, key_object))
+				continue;
+
+			hlist_del_rcu(&page->node);
+			call_rcu(&page->rcu, free_rcu_page);
 		}
 		spin_unlock(&hb->lock);
 	}
