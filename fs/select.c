@@ -586,13 +586,8 @@ int core_sys_select(int n, fd_set __user *inp, fd_set __user *outp,
 
 	if (is_replaying(scribe))
 		ret = scribe->orig_ret;
-	else {
-		if (is_scribed(scribe))
-			scribe->debug_res = true;
+	else
 		ret = do_select(n, &fds, end_time);
-		if (is_scribed(scribe))
-			scribe->debug_res = false;
-	}
 
 	if (ret < 0)
 		goto out;

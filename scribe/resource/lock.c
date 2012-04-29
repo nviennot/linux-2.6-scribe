@@ -200,10 +200,6 @@ static int do_lock_record(struct scribe_ps *scribe,
 	size_t size;
 	int ret;
 
-	if (scribe->debug_res) {
-		dump_stack();
-	}
-
 	if (should_scribe_res_extra(scribe)) {
 		/*
 		 * We want to fill out the description because we can unlock
