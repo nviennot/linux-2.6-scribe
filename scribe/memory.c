@@ -1701,46 +1701,16 @@ static int scribe_page_access_replay(struct scribe_ps *scribe,
 	}
 
 
-
 	if (event->type != SCRIBE_EVENT_MEM_OWNED_WRITE_EXTRA &&
 	    event->type != SCRIBE_EVENT_MEM_OWNED_READ_EXTRA &&
 	    event->type != SCRIBE_EVENT_MEM_OWNED_WRITE &&
 	    event->type != SCRIBE_EVENT_MEM_OWNED_READ &&
 	    event->type != SCRIBE_EVENT_MEM_ALONE) {
-		rw_flag = write_access;
-		scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_MEM_OWNED,
-			       .address = address & PAGE_MASK,
-			       .write_access = write_access);
-		goto all_good;
-	}
-
-	event = scribe_dequeue_event(scribe->queue, SCRIBE_WAIT);
-
-	page_addr = address & PAGE_MASK;
-	if (!get_owned_event_info(scribe, event,
-				  &rw_flag, &page_addr, &serial)) {
-		scribe_free_event(event);
-
-		if (unlikely(page_addr != (address & PAGE_MASK) ||
-			     (!rw_flag && write_access))) {
-			scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_MEM_OWNED,
-				       .address = address & PAGE_MASK,
-				       .write_access = write_access);
-		}
-
-		wait_event(page->serial_wait,
-			   serial_match(scribe, page, serial));
-
-all_good:
-		down_read(&mm->mmap_sem);
-
-		spin_lock(&page->owners_lock);
-		scribe_make_page_owned_replay(scribe, page, address, rw_flag);
-		spin_unlock(&page->owners_lock);
-		return 0;
+		goto diverge;
 	}
 
 	if (event->type == SCRIBE_EVENT_MEM_ALONE) {
+		event = scribe_dequeue_event(scribe->queue, SCRIBE_WAIT);
 		scribe_free_event(event);
 
 		wait_event(mm->scribe_wait, !is_sharing_mm(scribe->p->mm));
@@ -1752,12 +1722,34 @@ all_good:
 		return -EAGAIN;
 	}
 
+	if (get_owned_event_info(scribe, event,
+				 &rw_flag, &page_addr, &serial)) {
+		goto diverge;
+	}
+
+	if (unlikely(page_addr != (address & PAGE_MASK) ||
+		     (!rw_flag && write_access))) {
+		goto diverge;
+	}
+
+	event = scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
 	scribe_free_event(event);
-	scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_MEM_OWNED,
+	wait_event(page->serial_wait, serial_match(scribe, page, serial));
+	write_access = rw_flag;
+
+all_good:
+	down_read(&mm->mmap_sem);
+
+	spin_lock(&page->owners_lock);
+	scribe_make_page_owned_replay(scribe, page, address, write_access);
+	spin_unlock(&page->owners_lock);
+	return 0;
+
+diverge:
+	scribe_mutation(scribe, SCRIBE_EVENT_DIVERGE_MEM_OWNED,
 		       .address = address & PAGE_MASK,
 		       .write_access = write_access);
-	down_read(&mm->mmap_sem);
-	return -EDIVERGE;
+	goto all_good;
 }
 
 static inline int scribe_page_access(struct scribe_ps *scribe,
