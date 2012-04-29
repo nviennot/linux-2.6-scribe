@@ -413,6 +413,8 @@ void scribe_enter_syscall(struct pt_regs *regs)
 		return;
 
 	recalc_sigpending();
+
+	scribe->in_syscall = 1;
 }
 
 static void scribe_commit_syscall_record(struct scribe_ps *scribe,
@@ -497,6 +499,8 @@ void scribe_exit_syscall(struct pt_regs *regs)
 
 	if (is_scribe_syscall(scribe->syscall.nr))
 		return;
+
+	scribe->in_syscall = 0;
 
 	if (!scribe->commit_sys_reset_flags || is_mutating(scribe)) {
 		scribe_commit_syscall(scribe, regs,

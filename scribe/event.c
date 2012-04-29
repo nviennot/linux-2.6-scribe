@@ -608,6 +608,9 @@ int scribe_enter_fenced_region(int region)
 	if (!is_scribed(scribe))
 		return 0;
 
+	if (!scribe->in_syscall)
+		return 0;
+
 	WARN_ON(scribe->queue->regions_set & (1 << region));
 	scribe->queue->regions_set |= (1 << region);
 
@@ -649,6 +652,9 @@ void scribe_leave_fenced_region(int region)
 	struct scribe_queue *queue;
 
 	if (!is_scribed(scribe))
+		return;
+
+	if (!scribe->in_syscall)
 		return;
 
 	WARN_ON(!(scribe->queue->regions_set & (1 << region)));
