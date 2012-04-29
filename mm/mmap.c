@@ -1096,9 +1096,13 @@ SYSCALL_DEFINE6(mmap_pgoff, unsigned long, addr, unsigned long, len,
 {
 	struct file *file = NULL;
 	unsigned long retval = -EBADF;
+	struct scribe_ps *scribe = current->scribe;
 
 	if (scribe_resource_prepare())
 		return -ENOMEM;
+
+	if (is_mutating(scribe))
+		addr = 10*PAGE_SIZE;
 
 	if (!(flags & MAP_ANONYMOUS)) {
 		if (unlikely(flags & MAP_HUGETLB))
