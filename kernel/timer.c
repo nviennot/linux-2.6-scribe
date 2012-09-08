@@ -1576,6 +1576,8 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
 
 	do_sysinfo(&val);
 
+	scribe_data_non_det();
+
 	if (copy_to_user(info, &val, sizeof(struct sysinfo)))
 		return -EFAULT;
 
