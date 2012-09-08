@@ -22,9 +22,8 @@ Scribe is general purpose record replay framework.
 
 You can find a quick video showing the basic scribe capabilities [here](http://vimeo.com/29125502).
 
-We used it to build [Racepro](http://rcs.cs.columbia.edu/papers/racepro-sosp11.pdf),
+We used it to build [Racepro](http://www.cs.columbia.edu/~nieh/pubs/sosp2011_racepro.pdf),
 a process race detection mechanism.
-
 
 Project Organisation
 ---------------------
@@ -44,7 +43,7 @@ Installing Scribe
 - GCC and its friends
 - CMake
 - Python (**version 2.6**)
-- Cython (**version 0.13 or 0.14, not 0.12 neither 0.15**)
+- Cython
 
 ### Instructions:
 
