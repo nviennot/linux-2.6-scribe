@@ -1727,10 +1727,9 @@ static int scribe_page_access_replay(struct scribe_ps *scribe,
 		goto diverge;
 	}
 
-	if (unlikely(page_addr != (address & PAGE_MASK) ||
-		     (!rw_flag && write_access))) {
+	if (page_addr && unlikely(page_addr != (address & PAGE_MASK) ||
+				  (!rw_flag && write_access)))
 		goto diverge;
-	}
 
 	event = scribe_dequeue_event(scribe->queue, SCRIBE_NO_WAIT);
 	scribe_free_event(event);
