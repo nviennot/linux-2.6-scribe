@@ -2038,6 +2038,8 @@ static int tiocgwinsz(struct tty_struct *tty, struct winsize __user *arg)
 {
 	int err;
 
+	scribe_data_non_det();
+
 	mutex_lock(&tty->termios_mutex);
 	err = copy_to_user(arg, &tty->winsize, sizeof(*arg));
 	mutex_unlock(&tty->termios_mutex);
@@ -2266,6 +2268,7 @@ static int tiocgpgrp(struct tty_struct *tty, struct tty_struct *real_tty, pid_t 
 	if (tty == real_tty && current->signal->tty != real_tty)
 		return -ENOTTY;
 	pid = tty_get_pgrp(real_tty);
+	scribe_data_non_det();
 	ret =  put_user(pid_vnr(pid), p);
 	put_pid(pid);
 	return ret;
@@ -2342,6 +2345,7 @@ static int tiocgsid(struct tty_struct *tty, struct tty_struct *real_tty, pid_t _
 		return -ENOTTY;
 	if (!real_tty->session)
 		return -ENOTTY;
+	scribe_data_non_det();
 	return put_user(pid_vnr(real_tty->session), p);
 }
 
@@ -2565,6 +2569,7 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case TIOCGSID:
 		return tiocgsid(tty, real_tty, p);
 	case TIOCGETD:
+		scribe_data_non_det();
 		return put_user(tty->ldisc->ops->num, (int __user *)p);
 	case TIOCSETD:
 		return tiocsetd(tty, p);
