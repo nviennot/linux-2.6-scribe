@@ -134,6 +134,11 @@ struct futex_hash_bucket {
 	struct scribe_res_map scribe_resource;
 };
 
+static bool should_scribe_futex(struct scribe_ps *scribe)
+{
+	return is_scribed(scribe) && scribe->in_syscall;
+}
+
 static struct futex_hash_bucket futex_queues[1<<FUTEX_HASHBITS];
 
 /*
@@ -972,6 +977,7 @@ static inline void scribe_double_unlock_hb_discard(
  */
 static int futex_wake(u32 __user *uaddr, int fshared, int nr_wake, u32 bitset)
 {
+	struct scribe_ps *scribe = current->scribe;
 	struct futex_hash_bucket *hb;
 	struct futex_q *this, *next;
 	struct plist_head *head;
@@ -1077,7 +1083,7 @@ retry_private:
 
 		scribe_double_unlock_hb_discard(hb1, hb2);
 
-		if (is_scribed(scribe))
+		if (should_scribe_futex(scribe))
 			scribe_kill(scribe->ctx, -ENOSYS);
 
 		if (!fshared)
@@ -1269,6 +1275,7 @@ static int futex_requeue(u32 __user *uaddr1, int fshared, u32 __user *uaddr2,
 			 int nr_wake, int nr_requeue, u32 *cmpval,
 			 int requeue_pi)
 {
+	struct scribe_ps *scribe = current->scribe;
 	union futex_key key1 = FUTEX_KEY_INIT, key2 = FUTEX_KEY_INIT;
 	int drop_count = 0, task_count = 0, ret;
 	struct futex_pi_state *pi_state = NULL;
@@ -1343,8 +1350,8 @@ retry_private:
 
 			scribe_double_unlock_hb_discard(hb1, hb2);
 
-			if (is_ps_scribed(current))
-				scribe_kill(current->scribe->ctx, -ENOSYS);
+			if (should_scribe_futex(scribe))
+				scribe_kill(scribe->ctx, -ENOSYS);
 
 			if (!fshared)
 				goto retry_private;
@@ -1884,10 +1891,11 @@ static void futex_wait_queue_me(struct futex_hash_bucket *hb, struct futex_q *q,
 static int futex_wait_setup(u32 __user *uaddr, u32 val, int fshared,
 			   struct futex_q *q, struct futex_hash_bucket **hb)
 {
+	struct scribe_ps *scribe = current->scribe;
 	u32 uval;
 	int ret;
 
-	if (is_ps_scribed(current)) {
+	if (is_scribed(scribe)) {
 		/* same reasoning as in futex_wake_op() */
 		get_user(uval, uaddr);
 	}
@@ -1935,8 +1943,8 @@ retry_private:
 
 		scribe_unlock_discard(*hb);
 
-		if (is_ps_scribed(current))
-			scribe_kill(current->scribe->ctx, -ENOSYS);
+		if (should_scribe_futex(scribe))
+			scribe_kill(scribe->ctx, -ENOSYS);
 
 		if (!fshared)
 			goto retry_private;
@@ -2009,7 +2017,7 @@ retry:
 	if (!signal_pending(current)) {
 		put_futex_key(fshared, &q.key);
 
-		if (is_scribed(scribe))
+		if (should_scribe_futex(scribe))
 			scribe_kill(scribe->ctx, -ENOSYS);
 
 		goto retry;

@@ -133,12 +133,8 @@ void scribe_init_syscalls(struct scribe_ps *scribe, struct scribe_ps *parent)
 	} else {
 		bitmap_fill(scribe->sys_enable_bitmap, NR_scribe_syscalls);
 
-		clear_bit(__NR_get_scribe_flags,      scribe->sys_enable_bitmap);
-		clear_bit(__NR_set_scribe_flags,      scribe->sys_enable_bitmap);
-		clear_bit(__NR_scribe_send_event,     scribe->sys_enable_bitmap);
-		clear_bit(__NR_scribe_recv_event,     scribe->sys_enable_bitmap);
-		clear_bit(__NR_scribe_filter_syscall, scribe->sys_enable_bitmap);
-		clear_bit(__NR_prctl,                 scribe->sys_enable_bitmap);
+		/* Disable sys_prctl() as it doesn't replay well */
+		clear_bit(__NR_prctl, scribe->sys_enable_bitmap);
 	}
 }
 
@@ -264,6 +260,11 @@ out:
 	return ret;
 }
 
+static inline bool should_bypass_syscall(struct scribe_ps *scribe)
+{
+	return !test_bit(scribe->syscall.nr, scribe->sys_enable_bitmap);
+}
+
 static int __scribe_need_syscall_ret(struct scribe_ps *scribe)
 {
 	scribe->need_syscall_ret = true;
@@ -279,7 +280,7 @@ int scribe_need_syscall_ret(struct scribe_ps *scribe)
 	if (!is_scribed(scribe))
 		return 0;
 
-	if (!should_scribe_syscalls(scribe))
+	if (!should_scribe_syscalls(scribe) || should_bypass_syscall(scribe))
 		return 0;
 
 	if (scribe->need_syscall_ret)
@@ -371,11 +372,6 @@ static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 	}
 }
 
-static inline bool should_bypass_syscall(struct scribe_ps *scribe)
-{
-	return !test_bit(scribe->syscall.nr, scribe->sys_enable_bitmap);
-}
-
 void scribe_enter_syscall(struct pt_regs *regs)
 {
 	struct scribe_ps *scribe = current->scribe;
@@ -453,7 +449,7 @@ static void scribe_commit_syscall_record(struct scribe_ps *scribe,
 
 	if (syscall_extra) {
 		if (scribe_queue_new_event(scribe->queue,
-				   SCRIBE_EVENT_SYSCALL_END))
+					   SCRIBE_EVENT_SYSCALL_END))
 			goto err;
 	}
 
