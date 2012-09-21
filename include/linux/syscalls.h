@@ -832,6 +832,7 @@ asmlinkage long sys_get_scribe_flags(pid_t pid, unsigned long __user *flags);
 asmlinkage long sys_set_scribe_flags(pid_t pid, unsigned long flags, int duration);
 asmlinkage long sys_scribe_send_event(const struct scribe_event __user *uevent);
 asmlinkage long sys_scribe_recv_event(struct scribe_event __user *uevent, size_t size);
+asmlinkage long sys_scribe_filter_syscall(int nr, int enable);
 #endif
 
 #endif

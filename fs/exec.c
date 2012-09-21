@@ -528,13 +528,20 @@ static void scribe_attach_on_exec(int old_flags, int old_personality)
 {
 	struct scribe_ps *scribe = current->scribe;
 
-	if (scribe && (scribe->flags & SCRIBE_PS_ATTACH_ON_EXEC)) {
+	if (!scribe)
+		return;
+
+	if (scribe->flags & SCRIBE_PS_ATTACH_ON_EXEC) {
 		scribe_restore_flags(old_flags, old_personality);
 		if (!(old_personality & ADDR_NO_RANDOMIZE))
 			current->flags |= PF_RANDOMIZE;
 
 		scribe->flags &= ~SCRIBE_PS_ATTACH_ON_EXEC;
 		scribe_attach(scribe);
+	} else {
+		/* Resets the syscall mask table for new processes */
+		scribe_init_syscalls(scribe, NULL);
+		scribe->flags = SCRIBE_PS_ENABLE_ALL;
 	}
 }
 

@@ -405,7 +405,9 @@ ENTRY(sys_call_table)
 	.long sys_set_scribe_flags
 	.long sys_scribe_send_event
 	.long sys_scribe_recv_event
+	.long sys_scribe_filter_syscall
 #else
+	.long sys_ni_syscall
 	.long sys_ni_syscall
 	.long sys_ni_syscall
 	.long sys_ni_syscall

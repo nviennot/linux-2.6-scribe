@@ -931,7 +931,7 @@ static ssize_t do_readv_writev(struct scribe_ps *scribe, int type, struct file *
 			       struct iovec *iov, unsigned long nr_segs, size_t tot_len,
 			       loff_t *pos, int force_block)
 {
-	unsigned int saved_flags;
+	unsigned int saved_flags = 0;
 	ssize_t ret;
 
 	if (scribe)

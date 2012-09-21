@@ -987,7 +987,7 @@ static void posix_cpu_timers_init(struct task_struct *tsk)
 #ifdef CONFIG_SCRIBE
 
 int init_scribe(struct task_struct *p, struct scribe_context *ctx,
-		unsigned long flags)
+		struct scribe_ps *parent)
 {
 	struct scribe_ps *scribe;
 	int ret = -EINVAL;
@@ -1020,12 +1020,15 @@ int init_scribe(struct task_struct *p, struct scribe_context *ctx,
 
 	scribe_get_context(ctx);
 
-	scribe->flags = flags & SCRIBE_PS_ENABLE_ALL;
+	scribe->flags = parent ? parent->flags : SCRIBE_PS_ENABLE_ALL;
 	scribe->commit_sys_reset_flags = 0;
 	scribe->ctx = ctx;
 	scribe->p = p;
 	scribe->bmark_waiting = 0;
 	scribe->mm = NULL;
+
+	scribe_init_syscalls(scribe, parent);
+
 	/*
 	 * The memory pointer needs to be set before we set the scribe pointer
 	 */
@@ -1054,7 +1057,7 @@ static int copy_scribe(unsigned long long clone_flags, struct task_struct *p)
 	 * copy process, so we need to separately: 1) allocate the memory,
 	 * 2) trigger the record/replay.
 	 */
-	return init_scribe(p, scribe->ctx, scribe->flags);
+	return init_scribe(p, scribe->ctx, scribe);
 }
 
 #else /* CONFIG_SCRIBE */

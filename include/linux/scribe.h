@@ -25,6 +25,7 @@
 #include <linux/fs.h>
 #include <linux/signal.h>
 #include <linux/rcupdate.h>
+#include <linux/bitmap.h>
 #include <asm/scribe.h>
 #include <asm/atomic.h>
 
@@ -606,6 +607,10 @@ struct scribe_ps {
 	int bmark_waiting;
 
 	struct scribe_mm *mm;
+
+	/* TODO FIXME This is a workaround to get the real value */
+        #define NR_SYSCALLS 410
+	DECLARE_BITMAP(sys_enable_bitmap, NR_SYSCALLS);
 };
 
 #ifndef may_be_scribed
@@ -769,7 +774,7 @@ static inline void scribe_set_flags(struct scribe_ps *scribe,
 }
 
 extern int init_scribe(struct task_struct *p, struct scribe_context *ctx,
-		       unsigned long flags);
+		       struct scribe_ps *parent);
 extern void exit_scribe(struct task_struct *p);
 
 extern int scribe_set_attach_on_exec(struct scribe_context *ctx, int enable);
@@ -878,6 +883,8 @@ extern void scribe_syscall_set_flags(struct scribe_ps *scribe,
 				     unsigned long flags,
 				     int duration);
 extern void scribe_handle_custom_actions(struct scribe_ps *scribe);
+extern void scribe_init_syscalls(struct scribe_ps *scribe,
+				 struct scribe_ps *parent);
 extern int scribe_need_syscall_ret(struct scribe_ps *scribe);
 extern void scribe_enter_syscall(struct pt_regs *regs);
 extern void scribe_commit_syscall(struct scribe_ps *scribe,
@@ -934,8 +941,9 @@ extern int scribe_interpose_socket(struct socket *sock);
 #define is_ps_recording_safe(t)	0
 #define is_ps_replaying_safe(t)	0
 
-static inline int init_scribe(struct task_struct *p,
-			      struct scribe_context *ctx) { return 0; }
+
+extern inline int init_scribe(struct task_struct *p, struct scribe_context *ctx,
+			      struct scribe_ps *parent) { return 0; }
 static inline void exit_scribe(struct task_struct *tsk) {}
 
 static inline void scribe_allow_uaccess(void) {}

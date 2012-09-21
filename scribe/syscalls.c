@@ -125,13 +125,26 @@ static int scribe_regs(struct scribe_ps *scribe, struct pt_regs *regs)
 	return 0;
 }
 
-static inline int is_scribe_syscall(int nr)
+void scribe_init_syscalls(struct scribe_ps *scribe,
+			  struct scribe_ps *parent)
 {
-	return nr == __NR_get_scribe_flags ||
-	       nr == __NR_set_scribe_flags ||
-	       nr == __NR_scribe_send_event ||
-	       nr == __NR_scribe_recv_event ||
-	       nr == __NR_prctl;
+	if (parent) {
+		bitmap_copy(scribe->sys_enable_bitmap,
+			    parent->sys_enable_bitmap, NR_SYSCALLS);
+	} else {
+		bitmap_fill(scribe->sys_enable_bitmap, NR_SYSCALLS);
+
+		clear_bit(__NR_get_scribe_flags,  scribe->sys_enable_bitmap);
+		clear_bit(__NR_set_scribe_flags,  scribe->sys_enable_bitmap);
+		clear_bit(__NR_scribe_send_event, scribe->sys_enable_bitmap);
+		clear_bit(__NR_scribe_recv_event, scribe->sys_enable_bitmap);
+		clear_bit(__NR_prctl,             scribe->sys_enable_bitmap);
+	}
+}
+
+static inline bool should_bypass_syscall(struct scribe_ps *scribe)
+{
+	return test_bit(scribe->syscall.nr, scribe->sys_enable_bitmap);
 }
 
 static int scribe_need_syscall_ret_record(struct scribe_ps *scribe)
@@ -375,7 +388,7 @@ void scribe_enter_syscall(struct pt_regs *regs)
 		return;
 
 	cache_syscall_info(scribe, regs);
-	if (is_scribe_syscall(scribe->syscall.nr))
+	if (should_bypass_syscall(scribe))
 		return;
 
 	scribe_reset_fence_numbering(scribe);
@@ -497,7 +510,7 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	if (!is_scribed(scribe))
 		return;
 
-	if (is_scribe_syscall(scribe->syscall.nr))
+	if (should_bypass_syscall(scribe))
 		return;
 
 	scribe->in_syscall = 0;
@@ -671,4 +684,22 @@ SYSCALL_DEFINE2(scribe_recv_event, struct scribe_event __user *, uevent,
 out:
 	scribe_free_event(event);
 	return ret;
+}
+
+SYSCALL_DEFINE2(scribe_filter_syscall, int, nr, int, enable)
+{
+	struct scribe_ps *scribe = current->scribe;
+
+	if (!is_scribed(scribe))
+		return -EPERM;
+
+	if (nr >= NR_SYSCALLS)
+		return -EINVAL;
+
+	if (enable)
+		set_bit(nr, scribe->sys_enable_bitmap);
+	else
+		clear_bit(nr, scribe->sys_enable_bitmap);
+
+	return 0;
 }

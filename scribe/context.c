@@ -466,7 +466,7 @@ int scribe_set_attach_on_exec(struct scribe_context *ctx, int enable)
 	if (!enable)
 		return 0;
 
-	ret = init_scribe(p, ctx, SCRIBE_PS_ENABLE_ALL);
+	ret = init_scribe(p, ctx, NULL);
 	if (ret)
 		return ret;
 

@@ -1677,7 +1677,7 @@ static int scribe_page_access_replay(struct scribe_ps *scribe,
 		int write_access)
 {
 	struct scribe_event *event;
-	unsigned long page_addr;
+	unsigned long page_addr = 0;
 	int rw_flag;
 	int serial;
 
