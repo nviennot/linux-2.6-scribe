@@ -397,8 +397,10 @@ void scribe_enter_syscall(struct pt_regs *regs)
 
 	cache_syscall_info(scribe, regs);
 
-	if (!should_scribe_syscalls(scribe) || should_bypass_syscall(scribe))
+	if (!should_scribe_syscalls(scribe) || should_bypass_syscall(scribe)) {
+		scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
 		return;
+	}
 
 	scribe_reset_fence_numbering(scribe);
 
