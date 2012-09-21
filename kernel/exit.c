@@ -1022,6 +1022,7 @@ static inline void check_stack_usage(void) {}
 static void scribe_do_exit(struct task_struct *p, long code)
 {
 	struct scribe_ps *scribe = p->scribe;
+	struct pt_regs *regs;
 
 	if (!is_scribed(scribe))
 		goto out;
@@ -1029,24 +1030,23 @@ static void scribe_do_exit(struct task_struct *p, long code)
 	if (is_replaying(scribe))
 		code = scribe->orig_ret;
 
-	/*
-	 * If we are in a syscall, we need to record the end of the syscall
-	 * properly (it's going to be sys_exit_group()).
-	 */
-	if (!scribe->commit_sys_reset_flags || is_mutating(scribe))
-		scribe_commit_syscall(scribe, task_pt_regs(p), code);
-
-	if (is_mutating(scribe))
-		scribe_stop_mutations(scribe);
-
-	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);
+	if (scribe->in_syscall) {
+		/*
+		 * If we are in a syscall, we need to record the end of the
+		 * syscall properly (it's going to be sys_exit_group()).
+		 */
+		regs = task_pt_regs(p);
+		syscall_set_return_value(p, regs, 0, code);
+		scribe_exit_syscall(regs);
+	}
 
 	if (is_replaying(scribe) &&
 	    !scribe_is_queue_dead(scribe->queue, SCRIBE_WAIT)) {
 		scribe_diverge(scribe, SCRIBE_EVENT_DIVERGE_QUEUE_NOT_EMPTY);
 	}
 
-	__scribe_detach(scribe);
+	if (is_scribed(scribe))
+		__scribe_detach(scribe);
 
 out:
 	exit_scribe(p);

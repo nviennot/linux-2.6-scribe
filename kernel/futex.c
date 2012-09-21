@@ -1848,8 +1848,10 @@ static void futex_wait_queue_me(struct futex_hash_bucket *hb, struct futex_q *q,
 	scribe_forbid_uaccess();
 	scribe_enable_sync_sleep();
 	if (likely(!plist_node_empty(&q->list))) {
-		skip_schedule = is_ps_replaying(current) &&
-				current->scribe->orig_ret == -ETIMEDOUT;
+		struct scribe_ps *scribe = current->scribe;
+		skip_schedule = is_replaying(scribe) &&
+				scribe->in_syscall &&
+				scribe->orig_ret == -ETIMEDOUT;
 		/*
 		 * If the timer has already expired, current will already be
 		 * flagged for rescheduling. Only call schedule if there
@@ -2736,7 +2738,7 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 			 * We can't really return -ENOMEM, userspace might not
 			 * handle it, better kill the whole thing.
 			 */
-			scribe_kill(current->scribe->ctx, -ENOMEM);
+			scribe_kill(scribe->ctx, -ENOMEM);
 			return -ENOMEM;
 		}
 

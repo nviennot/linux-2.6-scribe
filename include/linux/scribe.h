@@ -608,9 +608,7 @@ struct scribe_ps {
 
 	struct scribe_mm *mm;
 
-	/* TODO FIXME This is a workaround to get the real value */
-        #define NR_SYSCALLS 410
-	DECLARE_BITMAP(sys_enable_bitmap, NR_SYSCALLS);
+	DECLARE_BITMAP(sys_enable_bitmap, NR_scribe_syscalls);
 };
 
 #ifndef may_be_scribed
@@ -887,8 +885,6 @@ extern void scribe_init_syscalls(struct scribe_ps *scribe,
 				 struct scribe_ps *parent);
 extern int scribe_need_syscall_ret(struct scribe_ps *scribe);
 extern void scribe_enter_syscall(struct pt_regs *regs);
-extern void scribe_commit_syscall(struct scribe_ps *scribe,
-				  struct pt_regs *regs, long ret_value);
 extern void scribe_exit_syscall(struct pt_regs *regs);
 extern void scribe_ret_from_fork(struct pt_regs *regs);
 extern int is_kernel_copy(void);

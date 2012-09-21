@@ -1020,8 +1020,9 @@ int init_scribe(struct task_struct *p, struct scribe_context *ctx,
 
 	scribe_get_context(ctx);
 
-	scribe->flags = parent ? parent->flags : SCRIBE_PS_ENABLE_ALL;
+	scribe->flags = (parent ? parent->flags : -1UL) & SCRIBE_PS_ENABLE_ALL;
 	scribe->commit_sys_reset_flags = 0;
+	scribe->in_syscall = 0;
 	scribe->ctx = ctx;
 	scribe->p = p;
 	scribe->bmark_waiting = 0;

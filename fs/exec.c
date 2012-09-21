@@ -538,10 +538,15 @@ static void scribe_attach_on_exec(int old_flags, int old_personality)
 
 		scribe->flags &= ~SCRIBE_PS_ATTACH_ON_EXEC;
 		scribe_attach(scribe);
+		__scribe_allow_uaccess(scribe);
 	} else {
-		/* Resets the syscall mask table for new processes */
+		/*
+		 * During execve(), we want to reset:
+		 * 1) the syscall table mask
+		 * 2) the flags (enable memory, etc...)
+		 */
 		scribe_init_syscalls(scribe, NULL);
-		scribe->flags = SCRIBE_PS_ENABLE_ALL;
+		scribe->flags |= SCRIBE_PS_ENABLE_ALL;
 	}
 }
 

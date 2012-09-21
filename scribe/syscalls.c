@@ -125,26 +125,21 @@ static int scribe_regs(struct scribe_ps *scribe, struct pt_regs *regs)
 	return 0;
 }
 
-void scribe_init_syscalls(struct scribe_ps *scribe,
-			  struct scribe_ps *parent)
+void scribe_init_syscalls(struct scribe_ps *scribe, struct scribe_ps *parent)
 {
 	if (parent) {
 		bitmap_copy(scribe->sys_enable_bitmap,
-			    parent->sys_enable_bitmap, NR_SYSCALLS);
+			    parent->sys_enable_bitmap, NR_scribe_syscalls);
 	} else {
-		bitmap_fill(scribe->sys_enable_bitmap, NR_SYSCALLS);
+		bitmap_fill(scribe->sys_enable_bitmap, NR_scribe_syscalls);
 
-		clear_bit(__NR_get_scribe_flags,  scribe->sys_enable_bitmap);
-		clear_bit(__NR_set_scribe_flags,  scribe->sys_enable_bitmap);
-		clear_bit(__NR_scribe_send_event, scribe->sys_enable_bitmap);
-		clear_bit(__NR_scribe_recv_event, scribe->sys_enable_bitmap);
-		clear_bit(__NR_prctl,             scribe->sys_enable_bitmap);
+		clear_bit(__NR_get_scribe_flags,      scribe->sys_enable_bitmap);
+		clear_bit(__NR_set_scribe_flags,      scribe->sys_enable_bitmap);
+		clear_bit(__NR_scribe_send_event,     scribe->sys_enable_bitmap);
+		clear_bit(__NR_scribe_recv_event,     scribe->sys_enable_bitmap);
+		clear_bit(__NR_scribe_filter_syscall, scribe->sys_enable_bitmap);
+		clear_bit(__NR_prctl,                 scribe->sys_enable_bitmap);
 	}
-}
-
-static inline bool should_bypass_syscall(struct scribe_ps *scribe)
-{
-	return test_bit(scribe->syscall.nr, scribe->sys_enable_bitmap);
 }
 
 static int scribe_need_syscall_ret_record(struct scribe_ps *scribe)
@@ -293,35 +288,28 @@ int scribe_need_syscall_ret(struct scribe_ps *scribe)
 	return __scribe_need_syscall_ret(scribe);
 }
 
-static bool is_interruptible_syscall(int nr_syscall)
-{
-	/*
-	 * FIXME Only do that for interruptible system calls (with
-	 * nr_syscall).
-	 */
-	return true;
-}
-
 static int get_nr_syscall(struct pt_regs *regs)
 {
 	unsigned long call;
 	int nr;
 
 	nr = syscall_get_nr(current, regs);
+
 	if (nr == __NR_socketcall) {
 		syscall_get_arguments(current, regs, 0, 1, &call);
-		if (call < 1 || call > SYS_RECVMMSG)
+		if (call > SYS_RECVMMSG)
 			return nr;
 
-		return SCRIBE_SOCKETCALL_BASE + call;
+		return SCRIBE_SOCKETCALL_FIRST + call;
 	}
+
 	if (nr == __NR_futex) {
 		syscall_get_arguments(current, regs, 1, 1, &call);
 		call &= FUTEX_CMD_MASK;
-		if (call > FUTEX_CMP_REQUEUE_PI)
+		if (call > SCRIBE_FUTEX_LAST)
 			return nr;
 
-		return SCRIBE_FUTEX_BASE + call;
+		return SCRIBE_FUTEX_FIRST + call;
 	}
 
 	return nr;
@@ -342,8 +330,11 @@ static int get_num_args(int nr)
 {
 	struct syscall_metadata *meta;
 
-	if ((nr & SCRIBE_SYSCALL_BASE_MASK) == SCRIBE_SOCKETCALL_BASE)
-		return socket_nargs[nr - SCRIBE_SOCKETCALL_BASE];
+	if (SCRIBE_SOCKETCALL_FIRST <= nr && nr <= SCRIBE_SOCKETCALL_LAST)
+		return socket_nargs[nr - SCRIBE_SOCKETCALL_FIRST];
+
+	if (SCRIBE_FUTEX_FIRST <= nr && nr <= SCRIBE_FUTEX_LAST)
+		return 6;
 
 	meta = syscall_nr_to_meta(nr);
 	if (!meta)
@@ -354,10 +345,11 @@ static int get_num_args(int nr)
 
 static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 {
-	scribe->syscall.nr = get_nr_syscall(regs);
-	scribe->syscall.num_args = get_num_args(scribe->syscall.nr);
+	int nr;
+	scribe->syscall.nr = nr = get_nr_syscall(regs);
+	scribe->syscall.num_args = get_num_args(nr);
 
-	if (syscall_get_nr(current, regs) == __NR_socketcall) {
+	if (SCRIBE_SOCKETCALL_FIRST <= nr && nr <= SCRIBE_SOCKETCALL_LAST) {
 		long base;
 		syscall_get_arguments(current, regs, 1, 1, &base);
 		scribe_data_ignore();
@@ -366,7 +358,7 @@ static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 			memset(scribe->syscall.args, -1,
 			       scribe->syscall.num_args * sizeof(long));
 		}
-		scribe_data_det();
+		scribe_data_pop_flags();
 		return;
 	}
 
@@ -379,6 +371,11 @@ static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 	}
 }
 
+static inline bool should_bypass_syscall(struct scribe_ps *scribe)
+{
+	return !test_bit(scribe->syscall.nr, scribe->sys_enable_bitmap);
+}
+
 void scribe_enter_syscall(struct pt_regs *regs)
 {
 	struct scribe_ps *scribe = current->scribe;
@@ -388,7 +385,8 @@ void scribe_enter_syscall(struct pt_regs *regs)
 		return;
 
 	cache_syscall_info(scribe, regs);
-	if (should_bypass_syscall(scribe))
+
+	if (!should_scribe_syscalls(scribe) || should_bypass_syscall(scribe))
 		return;
 
 	scribe_reset_fence_numbering(scribe);
@@ -412,26 +410,22 @@ void scribe_enter_syscall(struct pt_regs *regs)
 	if (scribe_maybe_detach(scribe))
 		return;
 
-	/* FIXME signals needs the return value */
-	if (!should_scribe_syscalls(scribe))
-		return;
+	/*
+	 * We wrote some code dependent on the return value (signals, ...)
+	 * so we don't obay to should_scribe_syscall_ret()
+	 */
+	__scribe_need_syscall_ret(scribe);
+	scribe->in_syscall = 1;
 
-	if (should_scribe_syscall_ret(scribe) ||
-	    is_interruptible_syscall(scribe->syscall.nr))
-		__scribe_need_syscall_ret(scribe);
-
-	if (should_scribe_syscalls(scribe) &&
-	    should_scribe_regs(scribe) &&
+	if (should_scribe_regs(scribe) && !is_mutating(scribe) &&
 	    scribe_regs(scribe, regs))
 		return;
 
 	recalc_sigpending();
-
-	scribe->in_syscall = 1;
 }
 
 static void scribe_commit_syscall_record(struct scribe_ps *scribe,
-					 struct pt_regs *regs, long ret_value)
+					 long ret_value)
 {
 	union scribe_syscall_event_union event;
 	int syscall_extra = should_scribe_syscall_extra(scribe);
@@ -469,7 +463,7 @@ err:
 }
 
 static void scribe_commit_syscall_replay(struct scribe_ps *scribe,
-					 struct pt_regs *regs, long ret_value)
+					 long ret_value)
 {
 	struct scribe_event_syscall_end *event_end;
 	int syscall_extra = should_scribe_syscall_extra(scribe);
@@ -489,8 +483,7 @@ static void scribe_commit_syscall_replay(struct scribe_ps *scribe,
 	}
 }
 
-void scribe_commit_syscall(struct scribe_ps *scribe, struct pt_regs *regs,
-			   long ret_value)
+void scribe_commit_syscall(struct scribe_ps *scribe, long ret_value)
 {
 	if (!scribe->need_syscall_ret)
 		return;
@@ -498,9 +491,9 @@ void scribe_commit_syscall(struct scribe_ps *scribe, struct pt_regs *regs,
 	scribe->need_syscall_ret = false;
 
 	if (is_recording(scribe))
-		scribe_commit_syscall_record(scribe, regs, ret_value);
+		scribe_commit_syscall_record(scribe, ret_value);
 	else
-		scribe_commit_syscall_replay(scribe, regs, ret_value);
+		scribe_commit_syscall_replay(scribe, ret_value);
 }
 
 void scribe_exit_syscall(struct pt_regs *regs)
@@ -510,27 +503,27 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	if (!is_scribed(scribe))
 		return;
 
-	if (should_bypass_syscall(scribe))
+	if (scribe->commit_sys_reset_flags) {
+		scribe_syscall_set_flags(scribe, scribe->commit_sys_reset_flags,
+					 SCRIBE_PERMANANT);
+	}
+
+	if (!scribe->in_syscall)
 		return;
 
 	scribe->in_syscall = 0;
 
-	if (!scribe->commit_sys_reset_flags || is_mutating(scribe)) {
-		scribe_commit_syscall(scribe, regs,
-				      syscall_get_return_value(current, regs));
-	}
+	scribe_commit_syscall(scribe, syscall_get_return_value(current, regs));
 
 	if (is_mutating(scribe))
 		scribe_stop_mutations(scribe);
 
-	if (scribe->commit_sys_reset_flags) {
-		scribe_syscall_set_flags(scribe, scribe->commit_sys_reset_flags,
-				 SCRIBE_PERMANANT);
-	}
-
 	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);
 
 	if (scribe_maybe_detach(scribe))
+		return;
+
+	if (unlikely(scribe->p->flags & PF_EXITING))
 		return;
 
 	__scribe_allow_uaccess(scribe);
@@ -693,7 +686,7 @@ SYSCALL_DEFINE2(scribe_filter_syscall, int, nr, int, enable)
 	if (!is_scribed(scribe))
 		return -EPERM;
 
-	if (nr >= NR_SYSCALLS)
+	if (nr >= NR_scribe_syscalls)
 		return -EINVAL;
 
 	if (enable)

@@ -344,14 +344,16 @@
 #define __NR_perf_event_open	336
 #define __NR_recvmmsg		337
 #define __NR_eclone		338
-#define __NR_get_scribe_flags	339
-#define __NR_set_scribe_flags	340
-#define __NR_scribe_send_event	341
-#define __NR_scribe_recv_event	342
+
+#define __NR_get_scribe_flags		401
+#define __NR_set_scribe_flags		402
+#define __NR_scribe_send_event		403
+#define __NR_scribe_recv_event		404
+#define __NR_scribe_filter_syscall	405
 
 #ifdef __KERNEL__
 
-#define NR_syscalls 343
+#define NR_syscalls 406
 
 #define __ARCH_WANT_IPC_PARSE_VERSION
 #define __ARCH_WANT_OLD_READDIR

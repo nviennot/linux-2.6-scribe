@@ -321,7 +321,7 @@ void __scribe_kill(struct scribe_context *ctx, struct scribe_event *reason)
 		return;
 	}
 
-#if 0
+#if 1
 	if (reason)
 		dump_stack();
 #endif

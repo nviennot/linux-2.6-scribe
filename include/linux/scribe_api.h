@@ -122,46 +122,59 @@
 #define SCRIBE_UNTIL_NEXT_SYSCALL	0x01
 
 /*
- * Syscalls offsets for multiplexed calls
+ * Syscalls offsets for scribe syscalls and multiplexed ones
  */
-#define SCRIBE_SOCKETCALL_BASE		0xf000
-#define SCRIBE_FUTEX_BASE		0xf100
-#define SCRIBE_SYSCALL_BASE_MASK	0xff00
 
-#define __NR_socket		(SCRIBE_SOCKETCALL_BASE + SYS_SOCKET)
-#define __NR_bind		(SCRIBE_SOCKETCALL_BASE + SYS_BIND)
-#define __NR_connect		(SCRIBE_SOCKETCALL_BASE + SYS_CONNECT)
-#define __NR_listen		(SCRIBE_SOCKETCALL_BASE + SYS_LISTEN)
-#define __NR_accept		(SCRIBE_SOCKETCALL_BASE + SYS_ACCEPT)
-#define __NR_getsockname	(SCRIBE_SOCKETCALL_BASE + SYS_GETSOCKNAME)
-#define __NR_getpeername	(SCRIBE_SOCKETCALL_BASE + SYS_GETPEERNAME)
-#define __NR_socketpair		(SCRIBE_SOCKETCALL_BASE + SYS_SOCKETPAIR)
-#define __NR_send		(SCRIBE_SOCKETCALL_BASE + SYS_SEND)
-#define __NR_recv		(SCRIBE_SOCKETCALL_BASE + SYS_RECV)
-#define __NR_sendto		(SCRIBE_SOCKETCALL_BASE + SYS_SENDTO)
-#define __NR_recvfrom		(SCRIBE_SOCKETCALL_BASE + SYS_RECVFROM)
-#define __NR_shutdown		(SCRIBE_SOCKETCALL_BASE + SYS_SHUTDOWN)
-#define __NR_setsockopt		(SCRIBE_SOCKETCALL_BASE + SYS_SETSOCKOPT)
-#define __NR_getsockopt		(SCRIBE_SOCKETCALL_BASE + SYS_GETSOCKOPT)
-#define __NR_sendmsg		(SCRIBE_SOCKETCALL_BASE + SYS_SENDMSG)
-#define __NR_recvmsg		(SCRIBE_SOCKETCALL_BASE + SYS_RECVMSG)
-#define __NR_accept4		(SCRIBE_SOCKETCALL_BASE + SYS_ACCEPT4)
-#define __NR_recvmmsg2		(SCRIBE_SOCKETCALL_BASE + SYS_RECVMMSG)
+#define __NR_get_scribe_flags		401
+#define __NR_set_scribe_flags		402
+#define __NR_scribe_send_event		403
+#define __NR_scribe_recv_event		404
+#define __NR_scribe_filter_syscall	405
 
-#define __NR_futex_wait		(SCRIBE_FUTEX_BASE + FUTEX_WAIT)
-#define __NR_futex_wake		(SCRIBE_FUTEX_BASE + FUTEX_WAKE)
-#define __NR_futex_fd		(SCRIBE_FUTEX_BASE + FUTEX_FD)
-#define __NR_futex_requeue	(SCRIBE_FUTEX_BASE + FUTEX_REQUEUE)
-#define __NR_futex_cmp_requeue	(SCRIBE_FUTEX_BASE + FUTEX_CMP_REQUEUE)
-#define __NR_futex_wake_op	(SCRIBE_FUTEX_BASE + FUTEX_WAKE_OP)
-#define __NR_futex_lock_pi	(SCRIBE_FUTEX_BASE + FUTEX_LOCK_PI)
-#define __NR_futex_unlock_pi	(SCRIBE_FUTEX_BASE + FUTEX_UNLOCK_PI)
-#define __NR_futex_trylock_pi	(SCRIBE_FUTEX_BASE + FUTEX_TRYLOCK_PI)
-#define __NR_futex_wait_bitset	(SCRIBE_FUTEX_BASE + FUTEX_WAIT_BITSET)
-#define __NR_futex_wake_bitset	(SCRIBE_FUTEX_BASE + FUTEX_WAKE_BITSET)
-#define __NR_futex_wait_requeue_pi (SCRIBE_FUTEX_BASE + FUTEX_WAIT_REQUEUE_PI)
-#define __NR_futex_cmp_requeue_pi (SCRIBE_FUTEX_BASE + FUTEX_CMP_REQUEUE_PI)
+enum scribe_multiplexed_syscalls {
+	SCRIBE_SYSCALL_BASE = 450,
 
+#define SCRIBE_SOCKETCALL_FIRST __NR_SOCKET_RESERVED
+	__NR_SOCKET_RESERVED,
+	__NR_socket,
+	__NR_bind,
+	__NR_connect,
+	__NR_listen,
+	__NR_accept,
+	__NR_getsockname,
+	__NR_getpeername,
+	__NR_socketpair,
+	__NR_send,
+	__NR_recv,
+	__NR_sendto,
+	__NR_recvfrom,
+	__NR_shutdown,
+	__NR_setsockopt,
+	__NR_getsockopt,
+	__NR_sendmsg,
+	__NR_recvmsg,
+	__NR_accept4,
+	__NR_recvmmsg2,
+#define SCRIBE_SOCKETCALL_LAST __NR_recvmmsg2
+
+#define SCRIBE_FUTEX_FIRST  __NR_futex_wait
+	__NR_futex_wait,
+	__NR_futex_wake,
+	__NR_futex_fd,
+	__NR_futex_requeue,
+	__NR_futex_cmp_requeue,
+	__NR_futex_wake_op,
+	__NR_futex_lock_pi,
+	__NR_futex_unlock_pi,
+	__NR_futex_trylock_pi,
+	__NR_futex_wait_bitset,
+	__NR_futex_wake_bitset,
+	__NR_futex_wait_requeue_pi,
+	__NR_futex_cmp_requeue_pi,
+#define SCRIBE_FUTEX_LAST  __NR_futex_cmp_requeue_pi
+
+	NR_scribe_syscalls,
+};
 
 enum scribe_event_type {
 	SCRIBE_EVENT_DUMMY1 = 0, /* skip the type 0 for safety */
