@@ -23,11 +23,14 @@ union scribe_syscall_event_union {
 };
 
 void scribe_syscall_set_flags(struct scribe_ps *scribe,
-			      unsigned long flags,
+			      unsigned long new_flags,
 			      int duration)
 {
+	unsigned long old_flags = scribe->flags;
+	bool toggle_mm;
+
 	if (duration == SCRIBE_UNTIL_NEXT_SYSCALL) {
-		scribe->commit_sys_reset_flags = scribe->flags;
+		scribe->commit_sys_reset_flags = old_flags;
 
 		/*
 		 * We prefer to disable signals during the execution
@@ -38,10 +41,22 @@ void scribe_syscall_set_flags(struct scribe_ps *scribe,
 	else
 		scribe->commit_sys_reset_flags = 0;
 
+	toggle_mm = (old_flags & SCRIBE_PS_ENABLE_MM) !=
+		    (new_flags & SCRIBE_PS_ENABLE_MM);
+
+	if (toggle_mm && scribe->in_syscall) {
+		if (new_flags & SCRIBE_PS_ENABLE_MM)
+			__scribe_forbid_uaccess(scribe);
+		else
+			__scribe_allow_uaccess(scribe);
+	}
+
 	/* We allow only enable flags to be set */
 	scribe->flags &= ~SCRIBE_PS_ENABLE_ALL;
-	scribe->flags |= flags & SCRIBE_PS_ENABLE_ALL;
-	scribe_mem_reload(scribe);
+	scribe->flags |= new_flags & SCRIBE_PS_ENABLE_ALL;
+
+	if (toggle_mm)
+		scribe_mem_reload(scribe);
 }
 
 void scribe_handle_custom_actions(struct scribe_ps *scribe)
