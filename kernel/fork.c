@@ -684,8 +684,11 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 		tsk->clear_child_tid = NULL;
 	}
 
-	if (is_scribed(scribe))
+	if (is_scribed(scribe)) {
+		if (!scribe->in_syscall)
+			scribe_forbid_uaccess();
 		scribe_mem_exit_st(scribe);
+	}
 }
 
 /*
