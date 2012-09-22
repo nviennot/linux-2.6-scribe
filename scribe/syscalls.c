@@ -612,12 +612,23 @@ static int do_scribe_flags(pid_t pid,
 	unsigned long old_flags = 0;
 	int err;
 
-	rcu_read_lock();
-	err = -ESRCH;
-	t = find_process_by_pid(pid);
-	if (!t)
-		goto out;
-	scribe = t->scribe;
+	if (in_flags) {
+		if (pid) {
+			/*
+			 * We cannot set the flags of another just process yet.
+			 * It's quite hard to implement.
+			 */
+			return -EINVAL;
+		}
+		scribe = current->scribe;
+	} else {
+		rcu_read_lock();
+		err = -ESRCH;
+		t = find_process_by_pid(pid);
+		if (!t)
+			goto out;
+		scribe = t->scribe;
+	}
 
 	err = -EINVAL;
 	if (!is_scribed(scribe))
@@ -629,7 +640,8 @@ static int do_scribe_flags(pid_t pid,
 
 	err = 0;
 out:
-	rcu_read_unlock();
+	if (!in_flags)
+		rcu_read_unlock();
 
 	if (out_flags && !err && put_user(old_flags, out_flags))
 	    err = -EFAULT;
