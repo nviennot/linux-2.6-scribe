@@ -710,7 +710,7 @@ bool scribe_maybe_detach(struct scribe_ps *scribe)
 	 * have started again, and other tasks might have joined the context.
 	 */
 	if (ctx->last_error)
-		force_sig(SIGKILL, p);
+		do_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, 1);
 	scribe_put_context(ctx);
 
 	/*
