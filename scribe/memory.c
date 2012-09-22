@@ -840,6 +840,7 @@ int scribe_mem_init_st(struct scribe_ps *scribe)
 {
 	struct scribe_mm *scribe_mm;
 	struct mm_struct *mm = scribe->p->mm;
+	unsigned long old_flags;
 
 	if (scribe_mm_disabled(scribe))
 		return 0;
@@ -863,7 +864,15 @@ int scribe_mem_init_st(struct scribe_ps *scribe)
 	else
 		maybe_go_multithreaded(mm);
 
+	/*
+	 * We really need to create that first sync point,
+	 * because we are expected to be a weak owner when
+	 * memory is disabled.
+	 */
+	old_flags = scribe->flags;
+	scribe->flags |= SCRIBE_PS_ENABLE_MM;
 	scribe_mem_sync_point(scribe, MEM_SYNC_IN);
+	scribe->flags = old_flags;
 
 	return 0;
 }
@@ -872,12 +881,20 @@ void scribe_mem_exit_st(struct scribe_ps *scribe)
 {
 	struct scribe_mm *scribe_mm = scribe->mm;
 	struct mm_struct *mm = scribe->p->mm;
+	unsigned long old_flags;
 
 	if (!scribe_mm)
 		return;
 
+	/*
+	 * Same rational as in scribe_mem_init_st, we need to
+	 * force the weak owner memory cleanup.
+	 */
+	old_flags = scribe->flags;
+	scribe->flags |= SCRIBE_PS_ENABLE_MM;
+
 	if (unlikely(scribe_mm->weak_owner != MEM_SYNC_IN)) {
-		/* BUG() or something got called */
+		WARN(1, "memory weak owner emergency cleanup");
 		scribe_mem_sync_point(scribe, MEM_SYNC_IN);
 	}
 
@@ -896,6 +913,7 @@ void scribe_mem_exit_st(struct scribe_ps *scribe)
 
 	scribe_mem_sync_point(scribe, MEM_SYNC_OUT | MEM_SYNC_SLEEP);
 	scribe_mem_sync_point(scribe, MEM_SYNC_OUT);
+	scribe->flags = old_flags;
 
 	BUG_ON(!list_empty(&scribe_mm->shared_req));
 
@@ -1211,7 +1229,7 @@ static int scribe_mem_sync_point_replay(struct scribe_ps *scribe, int mode)
 	return ret;
 }
 
-#ifdef CONFIG_SCRIBE_MEM_DBG
+#ifdef CONFIG_DEBUG_KERNEL
 static const char* get_sync_mode_str(int mode)
 {
 	switch(mode) {
@@ -1239,11 +1257,14 @@ void scribe_mem_sync_point(struct scribe_ps *scribe, int mode)
 {
 	int need_fence;
 	int ret, fence_ret = 0;
+
 	if (!should_handle_mm(scribe))
 		return;
 
 	if (mode & MEM_SYNC_IN) {
+		/* We might sleep during the replay */
 		might_sleep();
+
 		if (mode & MEM_SYNC_SLEEP)
 			assert_sync_mode(scribe, MEM_SYNC_IN);
 		else
@@ -1765,7 +1786,7 @@ static inline int scribe_page_access(struct scribe_ps *scribe,
 		ret = scribe_page_access_replay(scribe, mm, vma, page,
 						address, write_access);
 
-#ifdef CONFIG_SCRIBE_MEM_DBG
+#ifdef CONFIG_DEBUG_KERNEL
 	if (!ret) {
 		spin_lock(&page->owners_lock);
 		BUG_ON(!is_owned_by(page, scribe));
