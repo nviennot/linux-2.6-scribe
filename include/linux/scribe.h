@@ -42,6 +42,10 @@ struct scribe_substream {
 
 	unsigned long clear_region_on_commit_set;
 	unsigned long region_set;
+
+#ifdef CONFIG_DEBUG_KERNEL
+	unsigned long guard;
+#endif
 };
 
 /*

@@ -299,11 +299,18 @@ static void __insert_fences(struct scribe_stream *stream,
 	}
 }
 
+#define INSERT_POINT_GUARD(ip) ((unsigned long)(ip) ^ 0xDEADBEEF)
+
 static void init_insert_point(scribe_insert_point_t *ip,
 			      struct scribe_stream *stream,
 			      struct scribe_substream *where)
 {
 	unsigned long flags;
+
+#ifdef CONFIG_DEBUG_KERNEL
+	BUG_ON(ip->guard == INSERT_POINT_GUARD(ip));
+	ip->guard = INSERT_POINT_GUARD(ip);
+#endif
 
 	init_substream(stream, ip);
 
@@ -348,8 +355,15 @@ static inline void __scribe_queue_at(struct scribe_stream *stream,
 
 void scribe_commit_insert_point(scribe_insert_point_t *ip)
 {
-	struct scribe_stream *stream = ip->stream;
+	struct scribe_stream *stream;
 	unsigned long flags;
+
+#ifdef CONFIG_DEBUG_KERNEL
+	BUG_ON(ip->guard != INSERT_POINT_GUARD(ip));
+	ip->guard = 0;
+#endif
+
+	stream = ip->stream;
 
 	spin_lock_irqsave(&stream->lock, flags);
 	__clear_regions_on_commit(ip, get_substream(ip));
