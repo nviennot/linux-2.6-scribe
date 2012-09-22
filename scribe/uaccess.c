@@ -710,15 +710,23 @@ int scribe_buffer_at(void *buffer, size_t size, scribe_insert_point_t *ip)
 {
 	struct scribe_ps *scribe = current->scribe;
 
-	if (!is_scribed(scribe) || !should_scribe_data(scribe))
+	if (!is_scribed(scribe))
 		return 0;
 
+
 	if (is_recording(scribe)) {
+		if (!should_scribe_data(scribe))
+			return 0;
+
 		if (!ip)
 			ip = &scribe->queue->stream.master;
 		return __scribe_buffer_record(scribe, ip, buffer, size);
-	} else
+	} else {
+		if (!should_scribe_data(scribe))
+			return -ENODATA;
+
 		return __scribe_buffer_replay(scribe, buffer, size);
+	}
 }
 
 void scribe_allow_uaccess(void)
