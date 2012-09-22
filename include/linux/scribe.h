@@ -532,6 +532,7 @@ struct scribe_signal {
 extern void scribe_signal_enter_sync_point(int *num_deferred);
 extern void scribe_signal_leave_sync_point(void);
 extern void scribe_init_signal(struct scribe_signal *scribe_sig);
+extern void scribe_signal_ret_from_fork(void);
 
 static inline int is_interruption(int ret)
 {
@@ -777,7 +778,6 @@ extern void exit_scribe(struct task_struct *p);
 
 extern int scribe_set_attach_on_exec(struct scribe_context *ctx, int enable);
 extern void scribe_attach(struct scribe_ps *scribe);
-extern void __scribe_detach(struct scribe_ps *scribe);
 extern void scribe_detach(struct scribe_ps *scribe);
 extern bool scribe_maybe_detach(struct scribe_ps *scribe);
 

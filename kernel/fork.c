@@ -656,6 +656,7 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 		if ((!(tsk->flags & PF_SIGNALED) &&
 		    atomic_read(&mm->mm_users) > 1) || is_scribed(scribe)) {
 			unsigned long flags = 0;
+			unsigned long in_syscall = 0;
 			/*
 			 * We don't check the error code - if userspace has
 			 * not set up a proper pointer then tough luck.
@@ -664,8 +665,10 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 			put_user(0, tsk->clear_child_tid);
 
 
-			if (is_scribed(scribe) && test_bit(__NR_futex_wake, scribe->sys_enable_bitmap)) {
+			if (is_scribed(scribe) &&
+			    test_bit(__NR_futex_wake, scribe->sys_enable_bitmap)) {
 				flags = scribe->flags;
+				in_syscall = scribe->in_syscall;
 				scribe->in_syscall = false;
 				scribe->flags &= ~SCRIBE_PS_ENABLE_ALL;
 			}
@@ -675,7 +678,7 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 
 			if (flags) {
 				scribe->flags = flags;
-				scribe->in_syscall = true;
+				scribe->in_syscall = in_syscall;
 			}
 		}
 		tsk->clear_child_tid = NULL;

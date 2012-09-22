@@ -1038,6 +1038,8 @@ static void scribe_do_exit(struct task_struct *p, long code)
 		regs = task_pt_regs(p);
 		syscall_set_return_value(p, regs, 0, code);
 		scribe_exit_syscall(regs);
+	} else {
+		scribe_forbid_uaccess();
 	}
 
 	if (is_replaying(scribe) &&
@@ -1046,7 +1048,7 @@ static void scribe_do_exit(struct task_struct *p, long code)
 	}
 
 	if (is_scribed(scribe))
-		__scribe_detach(scribe);
+		scribe_detach(scribe);
 
 out:
 	exit_scribe(p);

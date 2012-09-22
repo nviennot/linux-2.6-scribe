@@ -612,7 +612,7 @@ void scribe_attach(struct scribe_ps *scribe)
 	scribe_handle_custom_actions(scribe);
 }
 
-void __scribe_detach(struct scribe_ps *scribe)
+void scribe_detach(struct scribe_ps *scribe)
 {
 	struct scribe_context *ctx = scribe->ctx;
 	unsigned int scribe_flags;
@@ -622,8 +622,10 @@ void __scribe_detach(struct scribe_ps *scribe)
 	BUG_ON(!is_scribed(scribe));
 
 	WARN_ON(scribe->can_uaccess && !is_scribe_context_dead(ctx));
-	WARN_ON(is_recording(scribe) && scribe->signal.should_defer);
+	WARN_ON(is_recording(scribe) && scribe->signal.should_defer &&
+		!(scribe->p->flags & PF_EXITING));
 
+	scribe_mem_exit_st(scribe);
 	scribe_detach_arch(scribe);
 
 	if (scribe->prepared_data_event.generic) {
@@ -669,16 +671,6 @@ void __scribe_detach(struct scribe_ps *scribe)
 	scribe->queue = NULL;
 }
 
-void scribe_detach(struct scribe_ps *scribe)
-{
-	scribe->flags |= SCRIBE_PS_DETACHING;
-	if (is_replaying(scribe))
-		scribe_kill_queue(scribe->queue);
-
-	scribe_mem_exit_st(scribe);
-	__scribe_detach(scribe);
-}
-
 static bool should_detach(struct scribe_ps *scribe)
 {
 	if (scribe->ctx->flags & SCRIBE_STOP)
@@ -704,6 +696,11 @@ bool scribe_maybe_detach(struct scribe_ps *scribe)
 	p = scribe->p;
 
 	scribe_get_context(ctx);
+
+	scribe->flags |= SCRIBE_PS_DETACHING;
+	if (is_replaying(scribe))
+		scribe_kill_queue(scribe->queue);
+
 	scribe_detach(scribe);
 	exit_scribe(scribe->p);
 

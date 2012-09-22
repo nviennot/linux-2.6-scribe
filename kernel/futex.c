@@ -977,7 +977,6 @@ static inline void scribe_double_unlock_hb_discard(
  */
 static int futex_wake(u32 __user *uaddr, int fshared, int nr_wake, u32 bitset)
 {
-	struct scribe_ps *scribe = current->scribe;
 	struct futex_hash_bucket *hb;
 	struct futex_q *this, *next;
 	struct plist_head *head;

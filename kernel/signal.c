@@ -708,7 +708,7 @@ static void scribe_record_signal(struct scribe_ps *scribe,
 
 	/*
 	 * We don't record synchronous signals because we would have to replay
-	 * them properly, it's a little easier to just ignore them.
+	 * them properly, it's a little easier to just skip the recording.
 	 */
 	if (sig_kernel_synchronous(sig))
 		return;
@@ -732,7 +732,7 @@ static void scribe_record_signal(struct scribe_ps *scribe,
 
 	/*
 	 * FIXME Do like in copy_siginfo_to_user(), where only
-	 * the relevent fields are copied because right now we are copying the
+	 * the relevant fields are copied because right now we are copying the
 	 * padding and all, it contains non-initialized data...
 	 */
 	sig_event->nr = sig;
@@ -817,15 +817,25 @@ static void scribe_signal_enter_sync_point_replay(struct scribe_ps *scribe,
 	}
 }
 
-void scribe_signal_enter_sync_point(int *num_deferred)
+static void __scribe_signal_enter_sync_point(struct scribe_ps *scribe,
+					     int *num_deferred)
 {
-	struct scribe_ps *scribe = current->scribe;
 	int _num_deferred;
-	int ret;
 
 	if (!num_deferred)
 		num_deferred = &_num_deferred;
 	*num_deferred = 0;
+
+	if (is_recording(scribe))
+		scribe_signal_enter_sync_point_record(scribe, num_deferred);
+	else
+		scribe_signal_enter_sync_point_replay(scribe, num_deferred);
+}
+
+void scribe_signal_enter_sync_point(int *num_deferred)
+{
+	struct scribe_ps *scribe = current->scribe;
+	int ret;
 
 	if (!is_scribed(scribe) || !should_scribe_signals(scribe))
 		return;
@@ -836,10 +846,7 @@ void scribe_signal_enter_sync_point(int *num_deferred)
 		return;
 	}
 
-	if (is_recording(scribe))
-		scribe_signal_enter_sync_point_record(scribe, num_deferred);
-	else
-		scribe_signal_enter_sync_point_replay(scribe, num_deferred);
+	__scribe_signal_enter_sync_point(scribe, num_deferred);
 
 	scribe_leave_fenced_region(SCRIBE_REGION_SIGNAL);
 }
@@ -848,9 +855,7 @@ static void scribe_signal_leave_sync_point_record(struct scribe_ps *scribe)
 {
 	struct scribe_signal *scribe_sig = &scribe->signal;
 
-	/* should_defer == true only when we just attached */
-	if (unlikely(scribe_sig->should_defer))
-		return;
+	BUG_ON(scribe_sig->should_defer);
 
 	spin_lock_irq(&scribe->p->sighand->siglock);
 	scribe_sig->should_defer = true;
@@ -873,15 +878,24 @@ void scribe_signal_leave_sync_point(void)
 void scribe_init_signal(struct scribe_signal *scribe_sig)
 {
 	/*
-	 * When we attach, we start by being outside the sync point. It's
-	 * easier to implement. The drawback is that we'll process pending
-	 * signals only on the next sync point.
+	 * When we attach, we start by being outside the sync point (because
+	 * we need the event queue to be inside), and get into the sync point:
+	 * - when returning from fork for new processes
+	 * - on the next syscall for init
 	 */
 	scribe_sig->self_signaling = false;
 	scribe_sig->should_defer = true;
 	init_sigpending(&scribe_sig->deferred);
 
 	scribe_sig->send_cookie_event = NULL;
+}
+
+void scribe_signal_ret_from_fork(void)
+{
+	struct scribe_ps *scribe = current->scribe;
+
+	if (is_scribed(scribe))
+		__scribe_signal_enter_sync_point(scribe, NULL);
 }
 
 static void scribe_pre_send_cookie(void)
@@ -2585,9 +2599,6 @@ relock:
 
 		if (pid != -1)
 			scribe_unlock_pid(pid);
-
-		scribe_forbid_uaccess();
-		scribe_signal_enter_sync_point(NULL);
 
 		scribe_handle_signal(scribe, &h_event, &hc_event,
 				     signr, scribe_cookie);

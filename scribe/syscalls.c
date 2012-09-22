@@ -27,7 +27,9 @@ void scribe_syscall_set_flags(struct scribe_ps *scribe,
 			      int duration)
 {
 	unsigned long old_flags = scribe->flags;
-	bool toggle_mm;
+
+	bool old_mm = old_flags & SCRIBE_PS_ENABLE_MM;
+	bool new_mm = new_flags & SCRIBE_PS_ENABLE_MM;
 
 	if (duration == SCRIBE_UNTIL_NEXT_SYSCALL) {
 		scribe->commit_sys_reset_flags = old_flags;
@@ -41,21 +43,25 @@ void scribe_syscall_set_flags(struct scribe_ps *scribe,
 	else
 		scribe->commit_sys_reset_flags = 0;
 
-	toggle_mm = (old_flags & SCRIBE_PS_ENABLE_MM) !=
-		    (new_flags & SCRIBE_PS_ENABLE_MM);
+	if (old_mm && !new_mm) {
+		/*
+		 * Disabling memory scribing: we need to go in a weak
+		 * owner state first.
+		 */
 
-	if (toggle_mm && scribe->in_syscall) {
-		if (new_flags & SCRIBE_PS_ENABLE_MM)
+		if (scribe->can_uaccess) {
 			__scribe_forbid_uaccess(scribe);
-		else
-			__scribe_allow_uaccess(scribe);
+			WARN_ON(scribe->can_uaccess);
+		}
 	}
+
+	/* TODO Signal toggle */
 
 	/* We allow only enable flags to be set */
 	scribe->flags &= ~SCRIBE_PS_ENABLE_ALL;
 	scribe->flags |= new_flags & SCRIBE_PS_ENABLE_ALL;
 
-	if (toggle_mm)
+	if (old_mm != new_mm)
 		scribe_mem_reload(scribe);
 }
 
@@ -387,6 +393,20 @@ static void cache_syscall_info(struct scribe_ps *scribe, struct pt_regs *regs)
 	}
 }
 
+static bool is_scribe_syscall(struct scribe_ps *scribe)
+{
+	switch (scribe->syscall.nr) {
+	case __NR_get_scribe_flags:
+	case __NR_set_scribe_flags:
+	case __NR_scribe_send_event:
+	case __NR_scribe_recv_event:
+	case __NR_scribe_filter_syscall:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void scribe_enter_syscall(struct pt_regs *regs)
 {
 	struct scribe_ps *scribe = current->scribe;
@@ -397,8 +417,13 @@ void scribe_enter_syscall(struct pt_regs *regs)
 
 	cache_syscall_info(scribe, regs);
 
+	if (is_scribe_syscall(scribe))
+		return;
+
 	if (!should_scribe_syscalls(scribe) || should_bypass_syscall(scribe)) {
-		scribe_syscall_set_flags(scribe, 0, SCRIBE_UNTIL_NEXT_SYSCALL);
+		scribe_syscall_set_flags(scribe,
+					 scribe->flags & SCRIBE_PS_ENABLE_SIGNAL,
+					 SCRIBE_UNTIL_NEXT_SYSCALL);
 		return;
 	}
 
@@ -509,11 +534,16 @@ void scribe_commit_syscall(struct scribe_ps *scribe, long ret_value)
 		scribe_commit_syscall_replay(scribe, ret_value);
 }
 
+static void scribe_finalize_syscall(struct scribe_ps *scribe);
+
 void scribe_exit_syscall(struct pt_regs *regs)
 {
 	struct scribe_ps *scribe = current->scribe;
 
 	if (!is_scribed(scribe))
+		return;
+
+	if (is_scribe_syscall(scribe))
 		return;
 
 	if (scribe->commit_sys_reset_flags) {
@@ -531,6 +561,11 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	if (is_mutating(scribe))
 		scribe_stop_mutations(scribe);
 
+	scribe_finalize_syscall(scribe);
+}
+
+static void scribe_finalize_syscall(struct scribe_ps *scribe)
+{
 	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);
 
 	if (scribe_maybe_detach(scribe))
@@ -550,23 +585,17 @@ void scribe_exit_syscall(struct pt_regs *regs)
 	 */
 	recalc_sigpending_and_wake(current);
 
-	if (unlikely(!scribe->can_uaccess))
-		scribe_kill(scribe->ctx, -EINVAL);
+	WARN_ON(should_scribe_mm(scribe) && !scribe->can_uaccess);
 }
 
 void scribe_ret_from_fork(struct pt_regs *regs)
 {
 	struct scribe_ps *scribe = current->scribe;
 
-	if (!is_scribed(scribe))
-		return;
-
-	scribe_bookmark_point(SCRIBE_BOOKMARK_POST_SYSCALL);
-
-	if (scribe_maybe_detach(scribe))
-		return;
-
-	__scribe_allow_uaccess(scribe);
+	if (is_scribed(scribe)) {
+		scribe_signal_ret_from_fork();
+		scribe_finalize_syscall(scribe);
+	}
 }
 
 static inline struct task_struct *find_process_by_pid(pid_t pid)
