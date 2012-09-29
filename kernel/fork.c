@@ -666,7 +666,7 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 
 
 			if (is_scribed(scribe) &&
-			    test_bit(__NR_futex_wake, scribe->sys_enable_bitmap)) {
+			    !test_bit(__NR_futex_wake, scribe->sys_enable_bitmap)) {
 				flags = scribe->flags;
 				in_syscall = scribe->in_syscall;
 				scribe->in_syscall = false;
