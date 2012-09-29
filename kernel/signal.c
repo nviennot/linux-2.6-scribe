@@ -182,7 +182,6 @@ void recalc_sigpending(void)
 			set_thread_flag(TIF_SIGPENDING);
 		else
 			clear_thread_flag(TIF_SIGPENDING);
-		return;
 	}
 
 	if (unlikely(tracehook_force_sigpending()))
@@ -1318,12 +1317,16 @@ static bool scribe_should_defer_signal(struct scribe_ps *scribe, int sig)
 		likely(!is_scribe_context_dead(scribe->ctx));
 }
 
-static bool scribe_should_replay_signal(struct scribe_ps *scribe, int sig)
+static bool scribe_should_replay_signal(struct scribe_ps *scribe, int sig,
+					int from_ancestor_ns)
 {
 	if (scribe->signal.self_signaling)
 		return true;
 
 	if (sig_kernel_synchronous(sig))
+		return true;
+
+	if (from_ancestor_ns)
 		return true;
 
 	return false;
@@ -1348,7 +1351,7 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 		scribe = NULL;
 
 	if (is_replaying(scribe)) {
-		if (!scribe_should_replay_signal(scribe, sig))
+		if (!scribe_should_replay_signal(scribe, sig, from_ancestor_ns))
 			return 0;
 		scribe = NULL;
 	}
