@@ -168,6 +168,8 @@ static struct futex_hash_bucket *hash_futex(union futex_key *key)
 		skey.both.ptr = NULL;
 		skey.both.offset = key->both.offset;
 		key = &skey;
+	} else {
+		WARN_ON(current->nsproxy->pid_ns->child_reaper->scribe);
 	}
 
 	hash = jhash2((u32 *)&key->both.word,
