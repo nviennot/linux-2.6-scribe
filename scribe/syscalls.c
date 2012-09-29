@@ -301,7 +301,7 @@ int scribe_need_syscall_ret(struct scribe_ps *scribe)
 	if (!is_scribed(scribe))
 		return 0;
 
-	if (!should_scribe_syscalls(scribe) || should_bypass_syscall(scribe))
+	if (!scribe->in_syscall)
 		return 0;
 
 	if (scribe->need_syscall_ret)
@@ -452,8 +452,8 @@ void scribe_enter_syscall(struct pt_regs *regs)
 	 * We wrote some code dependent on the return value (signals, ...)
 	 * so we don't obay to should_scribe_syscall_ret()
 	 */
-	__scribe_need_syscall_ret(scribe);
 	scribe->in_syscall = 1;
+	__scribe_need_syscall_ret(scribe);
 
 	if (should_scribe_regs(scribe) && !is_mutating(scribe) &&
 	    scribe_regs(scribe, regs))

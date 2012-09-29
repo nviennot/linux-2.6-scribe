@@ -369,7 +369,7 @@ pipe_read(struct kiocb *iocb, const struct iovec *_iov,
 	if (is_current_scribed)
 		scribe_need_syscall_ret(scribe);
 
-	if (is_replaying(scribe) && scribe->orig_ret < 0)
+	if (is_replaying(scribe) && scribe->in_syscall && scribe->orig_ret < 0)
 		return scribe->orig_ret;
 
 	do_wakeup = 0;
@@ -388,6 +388,7 @@ pipe_read(struct kiocb *iocb, const struct iovec *_iov,
 
 			if (chars < total_len &&
 			    is_replaying(scribe) &&
+			    scribe->in_syscall &&
 			    !unlikely(is_scribe_context_dead(scribe->ctx))) {
 				/*
 				 * We need to wait for the exact same number
@@ -518,7 +519,7 @@ pipe_write(struct kiocb *iocb, const struct iovec *_iov,
 		scribe_need_syscall_ret(scribe);
 
 	can_epipe = 1;
-	if (is_replaying(scribe)) {
+	if (is_replaying(scribe) && scribe->in_syscall) {
 		can_epipe = 0;
 		/*
 		 * If we failed during the recording, we have to fail during
