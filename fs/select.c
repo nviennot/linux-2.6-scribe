@@ -584,7 +584,7 @@ int core_sys_select(int n, fd_set __user *inp, fd_set __user *outp,
 	if (scribe_need_syscall_ret(scribe))
 		return -ENOMEM;
 
-	if (is_replaying(scribe))
+	if (is_replaying(scribe) && scribe->in_syscall)
 		ret = scribe->orig_ret;
 	else
 		ret = do_select(n, &fds, end_time);
@@ -895,7 +895,7 @@ int do_sys_poll(struct pollfd __user *ufds, unsigned int nfds,
 	}
 
 	poll_initwait(&table);
-	if (is_replaying(scribe)) {
+	if (is_replaying(scribe) && scribe->in_syscall) {
 		fdcount = scribe->orig_ret;
 		if (fdcount == -ERESTART_RESTARTBLOCK)
 			fdcount = -EINTR;

@@ -217,7 +217,7 @@ void scribe_pre_uaccess(const void *data, const void __user *user_ptr,
 {
 	struct scribe_ps *scribe = current->scribe;
 
-	if (!is_scribed(scribe))
+	if (!is_scribed(scribe) || !should_scribe_data(scribe))
 		return;
 
 	if (!is_kernel_copy() && size)
@@ -454,7 +454,7 @@ void scribe_post_uaccess(const void *data, const void __user *user_ptr,
 	struct scribe_ps *scribe = current->scribe;
 	struct data_desc desc;
 
-	if (!is_scribed(scribe))
+	if (!is_scribed(scribe) || !should_scribe_data(scribe))
 		return;
 
 	desc.data = (void *)data;
