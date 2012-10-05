@@ -612,6 +612,8 @@ static int do_scribe_flags(pid_t pid,
 	unsigned long old_flags = 0;
 	int err;
 
+	scribe_data_ignore();
+
 	if (in_flags) {
 		if (pid) {
 			/*
