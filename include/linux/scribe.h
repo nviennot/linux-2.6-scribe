@@ -840,7 +840,7 @@ static inline int scribe_buffer(void *buffer, size_t size)
 		scribe_create_insert_point(&__ip, &__scribe->queue->stream); \
 		if (has_flags) {					\
 			__old_flags = __scribe->flags;			\
-			scribe_set_flags(__scribe, scribe_flags);	\
+			scribe_set_flags(__scribe, (scribe_flags) & __old_flags); \
 		}							\
 		(dst) = (src);						\
 		if (cond) {						\
