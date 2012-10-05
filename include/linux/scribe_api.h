@@ -125,14 +125,14 @@
  * Syscalls offsets for scribe syscalls and multiplexed ones
  */
 
-#define __NR_get_scribe_flags		401
-#define __NR_set_scribe_flags		402
-#define __NR_scribe_send_event		403
-#define __NR_scribe_recv_event		404
-#define __NR_scribe_filter_syscall	405
+#define __NR_get_scribe_flags		501
+#define __NR_set_scribe_flags		502
+#define __NR_scribe_send_event		503
+#define __NR_scribe_recv_event		504
+#define __NR_scribe_filter_syscall	505
 
 enum scribe_multiplexed_syscalls {
-	SCRIBE_SYSCALL_BASE = 450,
+	SCRIBE_SYSCALL_BASE = 550,
 
 #define SCRIBE_SOCKETCALL_FIRST __NR_SOCKET_RESERVED
 	__NR_SOCKET_RESERVED,

@@ -345,15 +345,15 @@
 #define __NR_recvmmsg		337
 #define __NR_eclone		338
 
-#define __NR_get_scribe_flags		401
-#define __NR_set_scribe_flags		402
-#define __NR_scribe_send_event		403
-#define __NR_scribe_recv_event		404
-#define __NR_scribe_filter_syscall	405
+#define __NR_get_scribe_flags		501
+#define __NR_set_scribe_flags		502
+#define __NR_scribe_send_event		503
+#define __NR_scribe_recv_event		504
+#define __NR_scribe_filter_syscall	505
 
 #ifdef __KERNEL__
 
-#define NR_syscalls 406
+#define NR_syscalls 506
 
 #define __ARCH_WANT_IPC_PARSE_VERSION
 #define __ARCH_WANT_OLD_READDIR
