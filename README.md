@@ -15,15 +15,8 @@ execution ordering.  Sync points convert asynchronous interactions that can
 occur at arbitrary times into synchronous events that are much easier to
 record and replay.
 
-For more details about the theory behind it, you can read the
-[Scribe paper](http://viennot.biz/scribe.pdf).
-
-Scribe is general purpose record replay framework.
-
-You can find a quick video showing the basic scribe capabilities [here](http://vimeo.com/29125502).
-
-We used it to build [Racepro](http://www.cs.columbia.edu/~nieh/pubs/sosp2011_racepro.pdf),
-a process race detection mechanism.
+For more details read [this blog post](http://velvetpulse.com/2012/11/27/scribe-the-deterministic-transparent-record-replay-engine/).
+It has a screencast showing some of Scribe features.
 
 Project Organisation
 ---------------------
@@ -33,7 +26,7 @@ The Scribe project is divided in four different ones:
 - [The Linux Kernel](/nviennot/linux-2.6-scribe)
 - [The Userspace C Library](/nviennot/libscribe)
 - [The Python Library](/nviennot/py-scribe)
-- [The Tests](/nviennot/tests-scribe)
+- [The Tests](/nviennot/tests-scribe) (broken)
 
 Installing Scribe
 ---------------------
@@ -139,4 +132,4 @@ Detailed documentation
 -----------------------
 
 - For the kernel implementation details, read the
-[scribe kernel documentation](/nviennot/linux-2.6-scribe/blob/master/Documentation/scribe.md).
+[scribe kernel documentation](/nviennot/linux-2.6-scribe/blob/master/Documentation/scribe.md) (OUTDATED).
